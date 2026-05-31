@@ -95,12 +95,14 @@ from .models import (
 )
 
 # Error handling
+from .api_client.deribit_api_interface import configure_logging
 from .api_client.deribit_error_codes import DeribitError
 from .api_client.websocket_api_client import DeribitWebSocketError
 
 
 # Define what's available when using "from deribridge import *"
 __all__ = [
+    "configure_logging",
     # Main API clients
     "DeribitWebSocketClient",
     "DeribitAPIInterface",

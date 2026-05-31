@@ -68,6 +68,20 @@ def _is_indeterminate_error(exc: Exception) -> bool:
     return False
 
 
+def configure_logging(level: int = logging.INFO) -> None:
+    """Opt-in convenience for examples and scripts.
+
+    Libraries should NOT call this — it mutates the root logger via
+    ``logging.basicConfig``. It is provided so example code can set up console
+    logging in a single line; application code should configure logging itself.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+
+
 class OrderTracker:
     """Tracks the lifecycle of orders for performance and risk management."""
 
@@ -369,15 +383,11 @@ class DeribitAPIInterface:
             use_test_env: Whether to use test environment (default: False)
             log_level: Logging level (default: logging.INFO)
         """
-        # Configure logging
-        logging.basicConfig(
-            level=log_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.StreamHandler(sys.stdout)
-            ]
-        )
-        self.logger = logging.getLogger("DeribitAPI")
+        # Library code must not configure the root logger (that is the host
+        # application's job). Use a namespaced logger and respect whatever
+        # logging policy the host has set. Call deribridge.configure_logging()
+        # explicitly from scripts/examples if you want console output.
+        self.logger = logging.getLogger("deribridge.api")
 
         # Use provided client or create new one
         self.client = client or EnhancedDeribitClient(

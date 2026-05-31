@@ -1409,7 +1409,11 @@ class DeribitWebSocketClient:
         Returns:
             Subscription result
         """
-        channel = f"user.orders.{instrument_name or '*'}.raw"
+        channel = (
+            f"user.orders.{instrument_name}.raw"
+            if instrument_name
+            else "user.orders.any.any.raw"
+        )
         return await self.subscribe(channel, callback)
 
     async def subscribe_user_trades(
@@ -1427,7 +1431,11 @@ class DeribitWebSocketClient:
         Returns:
             Subscription result
         """
-        channel = f"user.trades.{instrument_name or '*'}.raw"
+        channel = (
+            f"user.trades.{instrument_name}.raw"
+            if instrument_name
+            else "user.trades.any.any.raw"
+        )
         return await self.subscribe(channel, callback)
 
     async def subscribe_user_portfolio(

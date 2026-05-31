@@ -116,3 +116,12 @@ async def test_rate_limiter_throttles_when_over_limit():
         await limiter.acquire()
     elapsed = asyncio.get_event_loop().time() - start
     assert elapsed >= 0.18
+
+
+def test_rate_limiter_helpers_use_logging_not_print():
+    """Library helpers must log, never print to stdout."""
+    import inspect
+    import deribridge.api_client.rate_limiter as rl
+    src = inspect.getsource(rl)
+    assert "print(" not in src
+    assert 'getLogger("deribridge.rate_limiter")' in src

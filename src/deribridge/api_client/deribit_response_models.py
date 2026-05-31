@@ -112,24 +112,27 @@ class DeribitResultResponse(DeribitBaseResponse):
         return self.raw_response.get("result")
 
     def to_typed_result(self, model_class: type[T]) -> T:
-        """Convert the result to a specific model type."""
+        """Convert a single-object result to a typed model.
+
+        Use :meth:`to_typed_list` for array results.
+        """
         if self.result is None:
             raise ValueError("Response contains no result")
-
-        # Handle list results
         if isinstance(self.result, list):
-            if hasattr(model_class, 'from_dict'):
-                return [model_class.from_dict(item) for item in self.result]  # type: ignore
-            else:
-                return [model_class(**item) for item in self.result]  # type: ignore
-
-        # Handle dict results
-        if hasattr(model_class, 'from_dict'):
+            raise TypeError("Result is a list; call to_typed_list() instead")
+        if hasattr(model_class, "from_dict"):
             return model_class.from_dict(self.result)  # type: ignore
-        else:
-            return model_class(**self.result)  # type: ignore
+        return model_class(**self.result)  # type: ignore
 
-
+    def to_typed_list(self, model_class: type[T]) -> list[T]:
+        """Convert a list result to a list of typed models."""
+        if self.result is None:
+            raise ValueError("Response contains no result")
+        if not isinstance(self.result, list):
+            raise TypeError("Result is not a list; call to_typed_result() instead")
+        if hasattr(model_class, "from_dict"):
+            return [model_class.from_dict(item) for item in self.result]  # type: ignore
+        return [model_class(**item) for item in self.result]  # type: ignore
 @dataclass
 class DeribitSubscriptionResponse(DeribitBaseResponse):
     """Represents a subscription update from the Deribit API."""
