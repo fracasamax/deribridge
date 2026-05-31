@@ -7,6 +7,7 @@ from collections import deque
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Callable, Tuple
 
+from dotenv import load_dotenv
 from websockets.exceptions import ConnectionClosed
 
 from ..classes.order import Order, OrderType, TimeInForce
@@ -424,7 +425,8 @@ class DeribitAPIInterface:
             client_secret: Optional[str] = None,
             use_test_env: bool = True,
             log_level: int = logging.INFO,
-            risk_config: Optional[Dict[str, Any]] = None
+            risk_config: Optional[Dict[str, Any]] = None,
+            load_dotenv_file: bool = True,
     ) -> 'DeribitAPIInterface':
         """
         Create and configure a new DeribitAPIInterface instance.
@@ -436,10 +438,15 @@ class DeribitAPIInterface:
             use_test_env: Whether to use the test environment (default: True)
             log_level: Logging level (default: logging.INFO)
             risk_config: Risk management configuration (optional)
+            load_dotenv_file: If True (default), call python-dotenv's
+                load_dotenv() to populate os.environ from a .env file before
+                reading credentials. Pass False to disable any cwd file read.
 
         Returns:
             A configured DeribitAPIInterface instance
         """
+        if load_dotenv_file:
+            load_dotenv()
         if not client and not client_id:
             # Load API credentials from environment variables
             client_id = os.environ.get(

@@ -38,8 +38,10 @@ Requires Python ≥ 3.12.
 
 ## Configuration
 
-Credentials are read from environment variables (via `python-dotenv`). Copy the example
-file and fill in your Deribit API keys:
+Credentials are read from environment variables. `configure()` calls
+`python-dotenv`'s `load_dotenv()` by default (pass `load_dotenv_file=False` to
+disable any working-directory file read). Copy the example file and fill in your
+Deribit API keys:
 
 ```bash
 cp .env.example .env
