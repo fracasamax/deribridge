@@ -94,8 +94,7 @@ Enumerated from the live import (`uv run python -c "import deribridge; print(sor
 | Name | Kind | Purpose |
 |------|------|---------|
 | `OrderClass` (alias of `classes.Order`) | Pydantic `BaseModel` | **Order-submission model.** This is what you build and pass to `submit_order`. |
-| `InstrumentClass` (alias of `classes.Instrument`) | class | Instrument domain object used by trade planning. |
-| `TradePlan` / `TradePlanItem` | Pydantic models | CSV-driven multi-leg trade planning. |
+| `InstrumentClass` (alias of `classes.Instrument`) | class | Instrument domain object used by Deribit instrument parsing. |
 | `Currency` | `Enum` | `BTC, ETH, USDC, USDT, EURR, SOL, XRP, PAXG, BNB, USDE, STETH, ETHW, USYC`. |
 | `InstrumentType` | `Enum` | `SPOT, FUTURE, OPTION`. |
 | `OptionType` | `Enum` | `CALL="C"`, `PUT="P"`. |

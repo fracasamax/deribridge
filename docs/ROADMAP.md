@@ -13,7 +13,7 @@ pre-1.0; priorities and timing may change.
 
 - **Event-first order/position tracking.** Replace the ~2s polling loop with
   ingestion of `user.orders` / `user.trades` subscriptions, keeping polling as a
-  reconciliation fallback. (Audit item #12.)
+  reconciliation fallback.
 
 ## Later (0.x → 1.0)
 

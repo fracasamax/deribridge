@@ -113,7 +113,7 @@ For a production example of the kind of analytics layer this bridge supports, se
 ```
 src/deribridge/
 ├── api_client/   # WebSocket client, API interface, rate limiter, response models
-├── classes/      # Domain types (Order, TradePlan, Instrument, Currency, ...)
+├── classes/      # Domain types (Order, Instrument, Currency, ...)
 └── models/       # Enums / value models (OrderType, TimeInForce, Interval, ...)
 ```
 
@@ -122,8 +122,8 @@ src/deribridge/
 `DeribitWebSocketClient`, `DeribitWebSocketError`, `DeribitAPIInterface`,
 `EnhancedDeribitClient`, `RateLimiter`, plus response models (`Order`, `OrderBook`,
 `Position`, `Trade`, `Ticker`, `AccountSummary`, `TransactionLogEntry`, …) and domain
-types (`TradePlan`, `TradePlanItem`, `Instrument`, `Currency`). See `__all__` in the
-package `__init__` for the full list.
+types (`Instrument`, `Currency`, `OrderPurpose`). See `__all__` in the package
+`__init__` for the full list.
 
 ## Used by
 

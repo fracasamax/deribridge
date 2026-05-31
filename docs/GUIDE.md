@@ -196,7 +196,6 @@ Imported directly from `deribridge`:
 
 **Domain types**
 - `Currency`, `InstrumentType`, `OptionType`, `OrderPurpose`
-- `TradePlan`, `TradePlanItem`
 - `OrderState`, `OrderType`, `TimeInForce`, `InstrumentKind`, `Interval`
 
 **Errors**

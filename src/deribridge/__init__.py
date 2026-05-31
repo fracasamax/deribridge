@@ -69,10 +69,6 @@ from .classes import (
     Order as OrderClass,
     Instrument as InstrumentClass,
 
-    # Trade planning
-    TradePlan,
-    TradePlanItem,
-
     # Enums and types
     Currency,
     InstrumentType,
@@ -140,8 +136,6 @@ __all__ = [
     # Business classes
     "OrderClass",
     "InstrumentClass",
-    "TradePlan",
-    "TradePlanItem",
     "Currency",
     "InstrumentType",
     "OptionType",

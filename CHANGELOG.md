@@ -22,8 +22,6 @@ Initial public beta.
 - `configure()` honours documented `.env` loading via `python-dotenv`
   (`load_dotenv_file=True` by default; pass `False` to disable cwd file reads).
 - Opt-in `configure_logging()` helper for scripts/examples.
-- `TradePlan.from_csv()` gained a `strict` flag and a structured `errors` list
-  instead of printing and silently dropping invalid rows.
 - `examples/` directory with runnable scripts (instrument parsing, order
   building, client connection, and a gated end-to-end order flow).
 - Governance docs: `SECURITY.md`, this changelog, and a release checklist.
