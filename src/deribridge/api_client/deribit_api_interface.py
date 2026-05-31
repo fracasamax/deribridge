@@ -1073,7 +1073,13 @@ class DeribitAPIInterface:
             instrument_name: Optional instrument name to filter
 
         Returns:
-            Optional[Dict[str, Any]]: Cancellation result or None if error
+            Optional[Dict[str, Any]]: Cancellation result on success, or None on
+                a DEFINITE failure.
+
+        Raises:
+            IndeterminateOrderError: If the request timed out or the socket
+                dropped mid-flight, so some/all cancels may have applied.
+                Reconcile via get_open_orders before retrying.
         """
         try:
             if not self.client.connected:
@@ -1099,6 +1105,21 @@ class DeribitAPIInterface:
 
             return result
         except Exception as e:
+            if _is_indeterminate_error(e):
+                self.logger.error(
+                    f"cancel_all_orders outcome INDETERMINATE: {e}. Some/all "
+                    "cancels may have applied — reconcile via get_open_orders "
+                    "before retrying."
+                )
+                raise IndeterminateOrderError(
+                    operation="cancel_all_orders",
+                    message=(
+                        f"cancel_all_orders timed out or disconnected mid-flight; "
+                        f"outcome unknown: {e}"
+                    ),
+                    order_id=None,
+                    cause=e,
+                ) from e
             self.logger.error(f"Error cancelling all orders: {e}")
             return None
 
@@ -1192,7 +1213,13 @@ class DeribitAPIInterface:
             type: Order type for closing (default: "market")
 
         Returns:
-            Optional[Dict[str, Any]]: Result or None if error
+            Optional[Dict[str, Any]]: Close result on success, or None on a
+                DEFINITE failure.
+
+        Raises:
+            IndeterminateOrderError: If the request timed out or the socket
+                dropped mid-flight, so the position may or may not be closed.
+                Reconcile via get_positions before acting.
         """
         try:
             if not self.client.connected:
@@ -1210,6 +1237,21 @@ class DeribitAPIInterface:
 
             return result
         except Exception as e:
+            if _is_indeterminate_error(e):
+                self.logger.error(
+                    f"close_position outcome INDETERMINATE for {instrument_name}: "
+                    f"{e}. The position may or may not have been closed — reconcile "
+                    "via get_positions before acting."
+                )
+                raise IndeterminateOrderError(
+                    operation="close_position",
+                    message=(
+                        f"close_position for {instrument_name} timed out or "
+                        f"disconnected mid-flight; outcome unknown: {e}"
+                    ),
+                    order_id=None,
+                    cause=e,
+                ) from e
             self.logger.error(f"Error closing position: {e}")
             return None
 
@@ -1221,7 +1263,11 @@ class DeribitAPIInterface:
             currency: Optional currency to filter
 
         Returns:
-            List[Dict[str, Any]]: Results for each position closure
+            List[Dict[str, Any]]: One result dict per position. Each has
+                ``success``; an indeterminate close (timeout/disconnect) is
+                recorded with ``indeterminate=True`` and ``success=False`` rather
+                than aborting the batch — reconcile those via get_positions
+                before retrying.
         """
         results = []
 
@@ -1254,6 +1300,17 @@ class DeribitAPIInterface:
                             "success": False,
                             "error": "close_position returned no result (state unknown)"
                         })
+                except IndeterminateOrderError as e:
+                    self.logger.error(
+                        f"close_position INDETERMINATE for {instrument}: {e}. "
+                        "Position state unknown; not retrying in-batch."
+                    )
+                    results.append({
+                        "instrument": instrument,
+                        "success": False,
+                        "indeterminate": True,
+                        "error": str(e)
+                    })
                 except Exception as e:
                     results.append({
                         "instrument": instrument,
