@@ -99,22 +99,3 @@ async def connect_deribit_client(
         if client and client.connected:
             await client.close()
         raise
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    # test
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    logger = logging.getLogger("deribit_trade_example")
-
-    # Example usage
-    client = asyncio.run(connect_deribit_client())
-    print(client)
-    # Close the client connection
-    if client and hasattr(client, 'close'):
-        asyncio.run(client.close())

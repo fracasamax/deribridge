@@ -131,36 +131,3 @@ class DeribitInstrument(Instrument):
             )
         else:
             raise ValueError(f"Instrument name '{instrument_name}' does not match any known pattern.")
-
-
-# Example usage:
-if __name__ == "__main__":
-    # DVOL instrument example
-    dvol = DeribitInstrument.parse_instrument("BTCDVOL_USDC-25JUN25")
-    print("DVOL instrument:")
-    print(dvol.model_dump_json(indent=2))
-    print(f"Is DVOL: {dvol.is_dvol}")
-
-    # Option instrument example
-    option = DeribitInstrument.parse_instrument("BTC-25APR25-66000-P")
-    print("\nOption instrument:")
-    print(option.model_dump_json(indent=2))
-    print(f"Is DVOL: {option.is_dvol}")
-
-    # Future instrument example
-    future = DeribitInstrument.parse_instrument("BTC-25SEP23")
-    print("\nFuture instrument:")
-    print(future.model_dump_json(indent=2))
-    print(f"Is DVOL: {future.is_dvol}")
-
-    # Perpetual instrument example
-    perpetual = DeribitInstrument.parse_instrument("BTC-PERPETUAL")
-    print("\nPerpetual instrument:")
-    print(perpetual.model_dump_json(indent=2))
-    print(f"Is DVOL: {perpetual.is_dvol}")
-
-    # USDC Perpetual instrument example
-    usdc_perpetual = DeribitInstrument.parse_instrument("BTC_USDC-PERPETUAL")
-    print("\nUSDC Perpetual instrument:")
-    print(usdc_perpetual.model_dump_json(indent=2))
-    print(f"Is DVOL: {usdc_perpetual.is_dvol}")
