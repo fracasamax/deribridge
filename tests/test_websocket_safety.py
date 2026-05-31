@@ -10,7 +10,7 @@ live connection (the WebSocket transport is mocked):
 - enum-or-string normalisation in submit_order.
 """
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -208,3 +208,15 @@ async def test_submit_order_accepts_string_inputs():
     assert method == "private/sell"
     assert params["type"] == "market"
     assert params["direction"] == "sell"
+
+
+# --------------------------------------------------------------------------- #
+# No implicit connect from the constructor
+# --------------------------------------------------------------------------- #
+def test_constructor_does_not_auto_connect_by_default():
+    """Default construction must not schedule a connect task (no implicit I/O)."""
+    with patch.object(
+        DeribitWebSocketClient, "connect", new=AsyncMock()
+    ) as mock_connect:
+        DeribitWebSocketClient(client_id="x", client_secret="y")
+    mock_connect.assert_not_called()

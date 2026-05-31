@@ -67,7 +67,8 @@ async def connect_deribit_client(
         client = EnhancedDeribitClient(
             client_id=client_id,
             client_secret=client_secret,
-            use_test_env=use_test_env
+            use_test_env=use_test_env,
+            auto_connect=False,
         )
 
         # Connect to WebSocket API
