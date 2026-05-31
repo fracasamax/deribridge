@@ -1,0 +1,75 @@
+[project]
+name = "deribridge"
+version = "0.1.0"
+description = "Async, typed Python client and middleware for the Deribit API"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+authors = [
+    { name = "Francesco Casamassima", email = "dev@elnc.eu" }
+]
+keywords = [
+    "deribit",
+    "crypto",
+    "cryptocurrency",
+    "trading",
+    "derivatives",
+    "options",
+    "futures",
+    "portfolio-analytics",
+    "deribook",
+    "async",
+    "asyncio",
+    "websocket",
+    "api-client",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
+dependencies = [
+    "python-dotenv>=1.2.2",
+    "pydantic>=2.11.5",
+    "websockets>=15.0.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/fracasamax/deribridge"
+Repository = "https://github.com/fracasamax/deribridge"
+Issues = "https://github.com/fracasamax/deribridge/issues"
+"Analytics (deribook)" = "https://deribook.com"
+
+[build-system]
+requires = ["hatchling>=1.29.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deribridge"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pip-audit>=2.7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+target-version = "py312"
