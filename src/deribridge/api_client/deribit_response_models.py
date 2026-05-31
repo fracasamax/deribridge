@@ -492,11 +492,17 @@ class Ticker:
         )
 
     @property
-    def spread(self) -> float:
+    def spread(self) -> Optional[float]:
+        """Bid-ask spread, or None if either side is missing (e.g. one-sided book)."""
+        if self.best_ask_price is None or self.best_bid_price is None:
+            return None
         return self.best_ask_price - self.best_bid_price
 
     @property
-    def mid_price(self) -> float:
+    def mid_price(self) -> Optional[float]:
+        """Mid price, or None if either side is missing (e.g. one-sided book)."""
+        if self.best_ask_price is None or self.best_bid_price is None:
+            return None
         return (self.best_ask_price + self.best_bid_price) / 2
 
 

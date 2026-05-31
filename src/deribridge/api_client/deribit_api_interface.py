@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import time
+from collections import deque
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Callable, Tuple
 
@@ -351,9 +352,12 @@ class DeribitAPIInterface:
         self.active_subscriptions: Dict[str, bool] = {}
 
         # Rate limiting settings
-        self.request_timestamps: List[float] = []
+        self.request_timestamps: deque[float] = deque()
         self.max_requests_per_second = 10
         self.rate_limit_window = 1.0  # seconds
+        # Serialize the check-then-append so concurrent callers cannot all
+        # observe a below-limit count and then each append, exceeding the limit.
+        self._rate_limit_lock = asyncio.Lock()
 
         # Background task reference for proper cleanup and error handling
         self._monitoring_task: Optional[asyncio.Task] = None
@@ -496,22 +500,29 @@ class DeribitAPIInterface:
             return False
 
     async def _wait_for_rate_limit(self):
-        """Apply rate limiting to API requests."""
-        now = time.time()
+        """Apply rate limiting to API requests.
 
-        # Remove timestamps older than the rate limit window
-        self.request_timestamps = [
-            ts for ts in self.request_timestamps if now - ts <= self.rate_limit_window]
+        The whole window-prune / capacity-check / record sequence is guarded by
+        a lock so concurrent callers cannot race past the limit.
+        """
+        async with self._rate_limit_lock:
+            now = time.time()
 
-        # If we've reached the limit, wait
-        if len(self.request_timestamps) >= self.max_requests_per_second:
-            wait_time = self.rate_limit_window - \
-                        (now - self.request_timestamps[0])
-            if wait_time > 0:
-                await asyncio.sleep(wait_time)
+            # Drop timestamps older than the rate-limit window (O(1) amortized).
+            while self.request_timestamps and now - self.request_timestamps[0] > self.rate_limit_window:
+                self.request_timestamps.popleft()
 
-        # Record this request
-        self.request_timestamps.append(time.time())
+            # If we've reached the limit, wait until the oldest entry ages out.
+            if len(self.request_timestamps) >= self.max_requests_per_second:
+                wait_time = self.rate_limit_window - (now - self.request_timestamps[0])
+                if wait_time > 0:
+                    await asyncio.sleep(wait_time)
+                    now = time.time()
+                    while self.request_timestamps and now - self.request_timestamps[0] > self.rate_limit_window:
+                        self.request_timestamps.popleft()
+
+            # Record this request.
+            self.request_timestamps.append(time.time())
 
     def _handle_monitoring_task_done(self, task: asyncio.Task) -> None:
         """Handle completion or failure of the monitoring background task."""
@@ -1035,10 +1046,12 @@ class DeribitAPIInterface:
                 auth_required=True
             )
 
-            # Update order tracker
-            if "order_id" in result:
+            # Update order tracker. Deribit's private/edit returns the new order
+            # under result["order"], not as a top-level "order_id".
+            new_order = result.get("order") if isinstance(result, dict) else None
+            if new_order and new_order.get("order_id"):
                 old_order_id = order_id
-                new_order_id = result["order_id"]
+                new_order_id = new_order["order_id"]
 
                 # Remove old order and add new one
                 await self.order_tracker.remove_order(old_order_id, {
@@ -1047,7 +1060,7 @@ class DeribitAPIInterface:
                 })
 
                 # Add the new order
-                await self.order_tracker.add_order(new_order_id, result)
+                await self.order_tracker.add_order(new_order_id, new_order)
 
             return result
         except Exception as e:
