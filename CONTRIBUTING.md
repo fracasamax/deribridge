@@ -78,3 +78,10 @@ this bridge.
 
 By contributing, you agree that your contributions are licensed under the project's
 [MIT License](LICENSE).
+
+
+## Dependency lockfile
+
+`uv.lock` is committed and is the source of truth for reproducible installs. CI
+verifies it stays in sync (`uv lock --check`). After changing dependencies in
+`pyproject.toml`, run `uv lock` and commit the updated lockfile.

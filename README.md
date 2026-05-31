@@ -29,12 +29,24 @@ risk views.
 ## Installation
 
 ```bash
-pip install -e .
-# or, with uv
-uv sync
+pip install deribridge
+```
+
+Until the first PyPI release you can install straight from GitHub:
+
+```bash
+pip install git+https://github.com/fracasamax/deribridge.git
 ```
 
 Requires Python ≥ 3.12.
+
+### Development install
+
+```bash
+git clone https://github.com/fracasamax/deribridge.git
+cd deribridge
+uv sync        # or: pip install -e .
+```
 
 ## Configuration
 
@@ -75,8 +87,9 @@ async def main():
 asyncio.run(main())
 ```
 
-A fuller runnable example lives in the `__main__` block of
-`src/deribridge/api_client/deribit_api_interface.py`.
+Fuller runnable examples live in [`examples/`](examples/) — instrument parsing
+and order building (no credentials), connecting a client, and a full
+connect → quote → place/cancel flow (gated behind an env flag, testnet only).
 
 ## Documentation
 
@@ -120,6 +133,19 @@ package `__init__` for the full list.
   on Deribit and want a clearer view of your book, take a look.
 
 Using `deribridge` in your own project? Open a PR adding it here.
+
+## Stability & compatibility
+
+`deribridge` is **beta** (`0.x`): public names and return types may change
+between minor releases, and the high-level trading helpers in particular are
+still evolving. Pin a version if you need stability, and check the
+[CHANGELOG](CHANGELOG.md) for breaking changes.
+
+- Targets the Deribit **WebSocket JSON-RPC v2** API, with both test and
+  production endpoints (switch via `use_test_env`).
+- Supported on **Python 3.12 and 3.13**.
+- Deribit may change its API at any time; tracking those changes may require
+  updates here.
 
 ## ⚠️ Disclaimer
 
