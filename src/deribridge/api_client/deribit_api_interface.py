@@ -1119,11 +1119,25 @@ class DeribitAPIInterface:
                 instrument = position.instrument_name
                 try:
                     result = await self.close_position(instrument)
-                    results.append({
-                        "instrument": instrument,
-                        "success": True,
-                        "result": result
-                    })
+                    # close_position swallows its errors and returns None, so a
+                    # None result means the close did NOT succeed — do not report
+                    # success or a risk-flattening caller will believe positions
+                    # are closed when they are still open.
+                    if result is not None:
+                        results.append({
+                            "instrument": instrument,
+                            "success": True,
+                            "result": result
+                        })
+                    else:
+                        self.logger.error(
+                            f"close_position returned no result for {instrument}; "
+                            f"position may still be open")
+                        results.append({
+                            "instrument": instrument,
+                            "success": False,
+                            "error": "close_position returned no result (state unknown)"
+                        })
                 except Exception as e:
                     results.append({
                         "instrument": instrument,

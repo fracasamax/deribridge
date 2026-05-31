@@ -253,6 +253,11 @@ class DeribitWebSocketClient:
                 if not (self.connected and self.authenticated):
                     break
 
+                # Re-read the clock: current_time above was captured before the
+                # sleep and is now stale, so the expiry comparison must use a
+                # fresh timestamp.
+                current_time = time.time()
+
                 # Check if refresh token is still valid
                 if current_time > self._refresh_token_expiry:
                     self.logger.warning("Refresh token expired, re-authenticating with credentials")
@@ -473,6 +478,8 @@ class DeribitWebSocketClient:
             raise
         except Exception as e:
             self.pending_requests.pop(message_id, None)
+            logging.error(
+                f"Unexpected error sending request '{method}' (id={message_id}): {e}")
             if self.connected:
                 # Unexpected error, try to reconnect
                 asyncio.create_task(self._reconnect())
@@ -623,12 +630,21 @@ class DeribitWebSocketClient:
             await self.ws.send(json.dumps(message))
             result = await asyncio.wait_for(future, timeout=30)
 
+            # Validate the response actually carries a usable token before
+            # marking ourselves authenticated. Otherwise a malformed/expired
+            # response would let private order requests proceed unauthenticated.
+            access_token = result.get("access_token")
+            expires_in = result.get("expires_in", 0) / 1000
+            if not access_token or expires_in <= 0:
+                self.authenticated = False
+                raise DeribitWebSocketError(
+                    -1, "Authentication response missing a valid access token")
+
             # Store tokens
-            self._access_token = result.get("access_token")
+            self._access_token = access_token
             self._refresh_token = result.get("refresh_token")
 
             # Calculate expiry time (convert from milliseconds to seconds)
-            expires_in = result.get("expires_in", 0) / 1000
             self._token_expiry = time.time() + expires_in
 
             # Calculate refresh token expiry (usually 7 days)
@@ -645,10 +661,19 @@ class DeribitWebSocketClient:
         except asyncio.TimeoutError:
             self.pending_requests.pop(message_id, None)
             raise DeribitWebSocketError(-1, "Authentication request timed out")
+        except DeribitWebSocketError as e:
+            # Credential / validation failure: do NOT auto-reconnect (it would
+            # loop forever on bad credentials). Surface it to the caller.
+            self.pending_requests.pop(message_id, None)
+            self.authenticated = False
+            self.logger.error(f"Authentication failed: {e.message}")
+            raise
         except Exception as e:
             self.pending_requests.pop(message_id, None)
+            self.authenticated = False
+            self.logger.error(f"Unexpected error during authentication: {e}")
             if self.connected:
-                # Unexpected error, try to reconnect
+                # Transport-level error, try to reconnect
                 asyncio.create_task(self._reconnect())
             raise
 
@@ -1444,7 +1469,6 @@ class DeribitWebSocketClient:
         if not self.subscription_channels:
             return {"subscriptions": []}
 
-        channels = list(self.subscription_channels)
         result = await self.send_request("public/unsubscribe_all")
 
         # Clear subscription set
