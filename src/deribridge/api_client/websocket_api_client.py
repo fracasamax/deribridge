@@ -172,6 +172,22 @@ class DeribitWebSocketClient:
                     await self._authenticate_credentials()
 
                 self.logger.info("Successfully connected to Deribit WebSocket API")
+            except DeribitWebSocketError as e:
+                self.logger.error(f"Failed to authenticate Deribit WebSocket API connection: {e}")
+                self.connected = False
+                self.authenticated = False
+                if self.heartbeat_task:
+                    self.heartbeat_task.cancel()
+                    self.heartbeat_task = None
+                if self.message_handler_task:
+                    self.message_handler_task.cancel()
+                    self.message_handler_task = None
+                if self.auth_refresh_task:
+                    self.auth_refresh_task.cancel()
+                    self.auth_refresh_task = None
+                if self.ws is not None:
+                    await self.ws.close()
+                    self.ws = None
             except Exception as e:
                 self.logger.error(f"Failed to connect to Deribit WebSocket API: {str(e)}")
                 self.connected = False
@@ -999,13 +1015,13 @@ class DeribitWebSocketClient:
             "resolution": api_resolution
         }
 
-        if start_timestamp:
+        if start_timestamp is not None:
             params["start_timestamp"] = start_timestamp
 
-        if end_timestamp:
+        if end_timestamp is not None:
             params["end_timestamp"] = end_timestamp
 
-        if count:
+        if count is not None:
             params["count"] = count
 
         return await self.send_request("public/get_tradingview_chart_data", params)
@@ -1154,9 +1170,10 @@ class DeribitWebSocketClient:
         Returns:
             Canceled orders details
         """
-        # params = {"detailed": False, 'freeze_quotes': False} both are default, chosen not to set them
-        params: Dict[str, Any] = {}
-        return await self.send_request("private/cancel_all", params, auth_required=True)
+        if not instrument_name:
+            raise ValueError("instrument_name is required")
+
+        return await self.cancel_all_orders_by_instrument(instrument_name)
 
     async def cancel_all_orders_by_currency(self, currency: str) -> Dict:
         """
@@ -1210,12 +1227,12 @@ class DeribitWebSocketClient:
 
         # validate kind in [future, option, spot, future_combo, option_combo, combo, any]
         valid_kinds = ["future", "option", "spot", "future_combo", "option_combo", "combo", "any"]
-        if kind not in valid_kinds:
+        if kind is not None and kind not in valid_kinds:
             raise ValueError(f"Invalid kind: {kind}. Must be one of {valid_kinds}.")
 
         # validate order_type in [all, limit, trigger_all, stop, take, trailing_stop]
         valid_order_types = ["all", "limit", "trigger_all", "stop", "take", "trailing_stop"]
-        if order_type not in valid_order_types:
+        if order_type is not None and order_type not in valid_order_types:
             raise ValueError(f"Invalid order_type: {order_type}. Must be one of {valid_order_types}.")
 
         params = {"currency": currency, }
@@ -1599,19 +1616,16 @@ class DeribitWebSocketClient:
             client_secret: Your Deribit API client secret
             use_test_env: Whether to use the test environment
         """
-        # Setup logging
-        logging.basicConfig(level=logging.INFO,
-                            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
         # Create client
         client = cls(client_id=client_id,
                      client_secret=client_secret,
                      use_test_env=use_test_env)
+        logger = logging.getLogger(__name__)
 
         try:
-            # Wait for connection
-            while not client.connected:
-                await asyncio.sleep(0.1)
+            await client.connect()
+            if not client.connected:
+                raise ConnectionError("Failed to connect to Deribit WebSocket API")
 
             # Authentication if credentials provided
             if client_id and client_secret:
@@ -1620,23 +1634,24 @@ class DeribitWebSocketClient:
                 # Example: Get account summary
                 if client.authenticated:
                     summary = await client.get_account_summary("BTC")
-                    print(f"Account Summary: {summary}")
+                    logger.info("Account summary: %s", summary)
 
             # Example: Subscribe to BTC-PERPETUAL instrument
             async def orderbook_callback(data):
-                print(f"Order book update: {data['data']['timestamp']}")
+                logger.info("Order book update: %s", data["data"]["timestamp"])
 
             await client.subscribe_orderbook("BTC-PERPETUAL", callback=orderbook_callback)
 
             # Keep the client running
-            print("Client running. Press Ctrl+C to exit...")
+            logger.info("Client running. Press Ctrl+C to exit...")
             while True:
                 await asyncio.sleep(1)
 
         except KeyboardInterrupt:
-            print("Shutting down...")
+            logger.info("Shutting down...")
         except Exception as e:
-            print(f"Error: {str(e)}")
+            logger.error("Error running client: %s", e)
+            raise
         finally:
             # Cleanup
             await client.close()

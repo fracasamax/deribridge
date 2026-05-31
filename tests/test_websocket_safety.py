@@ -264,3 +264,102 @@ async def test_subscribe_user_trades_all_users_uses_exact_match_channel(monkeypa
     monkeypatch.setattr(client, "subscribe", fake_subscribe)
     await client.subscribe_user_trades(None, lambda m: None)
     assert captured["channel"] == "user.trades.any.any.raw"
+
+
+# --------------------------------------------------------------------------- #
+# High-risk private endpoint routing
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_cancel_all_orders_is_scoped_to_instrument():
+    """The convenience method must never hit account-wide private/cancel_all."""
+    client = _make_client(connected=True, authenticated=True)
+    client.send_request = AsyncMock(return_value={"ok": True})
+
+    result = await client.cancel_all_orders("BTC-PERPETUAL")
+
+    assert result == {"ok": True}
+    client.send_request.assert_awaited_once_with(
+        "private/cancel_all_by_instrument",
+        {"instrument_name": "BTC-PERPETUAL"},
+        auth_required=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancel_all_orders_requires_instrument_name():
+    client = _make_client(connected=True, authenticated=True)
+    client.send_request = AsyncMock()
+
+    with pytest.raises(ValueError, match="instrument_name is required"):
+        await client.cancel_all_orders("")
+
+    client.send_request.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cancel_all_by_kind_or_type_allows_optional_filters_to_be_omitted():
+    client = _make_client(connected=True, authenticated=True)
+    client.send_request = AsyncMock(return_value={"ok": True})
+
+    await client.cancel_all_orders_by_kind_or_type("BTC")
+
+    client.send_request.assert_awaited_once_with(
+        "private/cancel_all_by_kind_or_type",
+        {"currency": "BTC"},
+        auth_required=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_historical_prices_preserves_zero_values():
+    client = _make_client(connected=True, authenticated=False)
+    client.send_request = AsyncMock(return_value={"ticks": []})
+
+    await client.get_historical_prices(
+        "BTC-PERPETUAL",
+        start_timestamp=0,
+        end_timestamp=0,
+        count=0,
+    )
+
+    _, params = client.send_request.await_args.args[:2]
+    assert params["start_timestamp"] == 0
+    assert params["end_timestamp"] == 0
+    assert params["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_connect_does_not_reconnect_forever_on_authentication_failure(monkeypatch):
+    """Bad credentials are not transport failures; reconnecting would loop."""
+    client = DeribitWebSocketClient(client_id="x", client_secret="bad")
+    fake_ws = AsyncMock()
+    created_tasks = []
+
+    class _DummyTask:
+        def cancel(self):
+            pass
+
+    def fake_create_task(coro):
+        created_tasks.append(coro)
+        coro.close()
+        return _DummyTask()
+
+    monkeypatch.setattr(
+        "deribridge.api_client.websocket_api_client.websockets.connect",
+        AsyncMock(return_value=fake_ws),
+    )
+    monkeypatch.setattr(
+        "deribridge.api_client.websocket_api_client.asyncio.create_task",
+        fake_create_task,
+    )
+    client._authenticate_credentials = AsyncMock(
+        side_effect=DeribitWebSocketError(13009, "bad credentials")
+    )
+
+    await client.connect()
+
+    assert client.connected is False
+    assert client.authenticated is False
+    fake_ws.close.assert_awaited_once()
+    # Message handler + heartbeat only. A third task here would be _reconnect().
+    assert len(created_tasks) == 2

@@ -8,6 +8,8 @@ result. Results (and errors) are now indexed by original input position.
 """
 import asyncio
 
+import pytest
+
 from deribridge.api_client.rate_limiter import (
     RateLimiter,
     TaskGroup,
@@ -125,3 +127,8 @@ def test_rate_limiter_helpers_use_logging_not_print():
     src = inspect.getsource(rl)
     assert "print(" not in src
     assert 'getLogger("deribridge.rate_limiter")' in src
+
+
+def test_rate_limiter_rejects_non_positive_limits():
+    with pytest.raises(ValueError, match="rate_limit must be positive"):
+        RateLimiter(rate_limit=0)

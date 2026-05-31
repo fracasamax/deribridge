@@ -407,8 +407,7 @@ class DeribitAPIInterface:
 
         # Callbacks
         self.on_order_update: Optional[Callable[[Dict[str, Any]], None]] = None
-        self.on_position_update: Optional[Callable[[
-            Dict[str, Any]], None]] = None
+        self.on_position_update: Optional[Callable[[Position], None]] = None
         self.on_ticker_update: Optional[Callable[[str, Ticker], None]] = None
         self.on_orderbook_update: Optional[Callable[[
             str, OrderBook], None]] = None
@@ -704,9 +703,13 @@ class DeribitAPIInterface:
                 # Get account summary for BTC (primary currency)
                 account_summary = await self.client.get_account_summary_model("BTC", extended=True)
 
-                # Update risk manager with current equity
-                self.risk_manager.update_equity(
-                    account_summary.total_equity_usd)
+                # Prefer the USD aggregate when Deribit includes it; otherwise
+                # use the account currency equity so the monitoring loop keeps
+                # running for non-extended responses.
+                equity = account_summary.total_equity_usd
+                if equity is None:
+                    equity = account_summary.equity
+                self.risk_manager.update_equity(equity)
 
                 # Get positions
                 await self._wait_for_rate_limit()
@@ -1102,13 +1105,15 @@ class DeribitAPIInterface:
             if not self.client.connected:
                 await self.start_client()
 
-            params = {}
+            method = "private/cancel_all"
+            params: Dict[str, Any] = {}
             if instrument_name:
+                method = "private/cancel_all_by_instrument"
                 params["instrument_name"] = instrument_name
 
             await self._wait_for_rate_limit()
             result = await self.client.send_request(
-                "private/cancel_all",
+                method,
                 params,
                 auth_required=True
             )

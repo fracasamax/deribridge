@@ -254,6 +254,20 @@ async def test_cancel_all_orders_returns_none_on_definite_failure():
 
 
 @pytest.mark.asyncio
+async def test_cancel_all_orders_with_instrument_uses_scoped_endpoint():
+    iface, client = _make_interface()
+    client.send_request = AsyncMock(return_value={"cancelled": []})
+
+    await iface.cancel_all_orders("BTC-PERPETUAL")
+
+    client.send_request.assert_awaited_once_with(
+        "private/cancel_all_by_instrument",
+        {"instrument_name": "BTC-PERPETUAL"},
+        auth_required=True,
+    )
+
+
+@pytest.mark.asyncio
 async def test_close_position_raises_indeterminate_on_disconnect():
     iface, client = _make_interface()
     client.send_request = AsyncMock(side_effect=ConnectionError("dropped"))

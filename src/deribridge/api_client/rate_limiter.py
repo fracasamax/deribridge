@@ -19,8 +19,10 @@ class RateLimiter:
         Args:
             rate_limit: Maximum number of requests per second
         """
+        if rate_limit <= 0:
+            raise ValueError("rate_limit must be positive")
         self.rate_limit = rate_limit
-        self.tokens = rate_limit
+        self.tokens = float(rate_limit)
         self.updated_at = time.monotonic()
         self.lock = asyncio.Lock()
 

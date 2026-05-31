@@ -59,6 +59,8 @@ async def connect_deribit_client(
     if authenticate and (not client_id or not client_secret):
         raise ValueError("Authentication requested but client_id or client_secret is missing")
 
+    client: Optional[EnhancedDeribitClient] = None
+
     try:
         # Log connection attempt
         log.info(f"Connecting to Deribit {'test' if use_test_env else 'production'} environment")
@@ -91,11 +93,11 @@ async def connect_deribit_client(
         raise
     except ValueError as e:
         log.error(f"Authentication error: {str(e)}")
-        if client and client.connected:
+        if client is not None and client.connected:
             await client.close()
         raise
     except Exception as e:
         log.error(f"Unexpected error during connection: {str(e)}")
-        if client and client.connected:
+        if client is not None and client.connected:
             await client.close()
         raise

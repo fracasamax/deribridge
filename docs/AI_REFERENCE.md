@@ -50,7 +50,7 @@ For most tooling, instantiate `DeribitAPIInterface`. Drop to `EnhancedDeribitCli
 
 ## 2. Public API surface (`deribridge.__all__`)
 
-Enumerated from the live import (`uv run python -c "import deribridge; print(sorted(deribridge.__all__))"`). 47 names. Note the **alias collisions**: several names are deliberately re-exported under suffixed names because two layers define a same-named type.
+Enumerated from the live import (`uv run python -c "import deribridge; print(sorted(deribridge.__all__))"`). 49 names. Note the **alias collisions**: several names are deliberately re-exported under suffixed names because two layers define a same-named type.
 
 ### Clients & interfaces
 | Name | Purpose |
