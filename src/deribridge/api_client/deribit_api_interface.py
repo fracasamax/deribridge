@@ -7,10 +7,64 @@ from collections import deque
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Callable, Tuple
 
+from websockets.exceptions import ConnectionClosed
+
 from ..classes.order import Order, OrderType, TimeInForce
 from .enhanced_api_client import EnhancedDeribitClient
+from .websocket_api_client import DeribitWebSocketError
 from .deribit_response_models import OrderBook, Ticker, Position, Order as OrderModel, \
     OrderSubmitResponse, OrderCancelResponse
+
+# Sentinel error code used by the underlying websocket client to flag
+# request timeouts (see DeribitWebSocketClient.send_request). A timeout means
+# the request may have reached the exchange but we never saw the reply, so the
+# outcome is INDETERMINATE rather than a definite failure.
+_TIMEOUT_ERROR_CODE = -1
+
+
+class IndeterminateOrderError(Exception):
+    """Raised when an order request's outcome is unknown.
+
+    A request timed out or the socket dropped mid-flight, so we cannot tell
+    whether the exchange accepted, rejected, or never received the order.
+    This is deliberately DISTINCT from a definite failure (which the order
+    methods still signal by returning ``None``): the caller MUST reconcile the
+    real state via ``get_order_state``/``get_open_orders`` before retrying, or
+    it risks duplicating a live order.
+
+    Attributes:
+        operation: The order operation that was in flight ("submit_order",
+            "cancel_order", "replace_order").
+        order_id: The exchange order id involved, if known (None for new
+            submissions that had not yet been assigned an id).
+        cause: The underlying exception that triggered the indeterminate state.
+    """
+
+    def __init__(
+            self,
+            operation: str,
+            message: str,
+            order_id: Optional[str] = None,
+            cause: Optional[BaseException] = None,
+    ):
+        self.operation = operation
+        self.order_id = order_id
+        self.cause = cause
+        super().__init__(message)
+
+
+def _is_indeterminate_error(exc: Exception) -> bool:
+    """Return True if ``exc`` leaves an order's outcome unknown.
+
+    Timeouts and mid-flight disconnects mean the request may already have been
+    accepted by the exchange; we just never saw the acknowledgement. These must
+    be surfaced as indeterminate, never collapsed into a definite-failure None.
+    """
+    if isinstance(exc, (asyncio.TimeoutError, ConnectionError, ConnectionClosed)):
+        return True
+    if isinstance(exc, DeribitWebSocketError) and exc.code == _TIMEOUT_ERROR_CODE:
+        return True
+    return False
 
 
 class OrderTracker:
@@ -606,8 +660,10 @@ class DeribitAPIInterface:
                             estimated_pnl = 0.0
                             self.risk_manager.record_trade_pnl(estimated_pnl)
 
-                        # Call the order update callback if defined
-                        if self.on_order_update:
+                        # Call the order update callback if defined.
+                        # remove_order returns None if the order was no longer
+                        # tracked; only fire the callback with a real record.
+                        if self.on_order_update and complete_record is not None:
                             self.on_order_update(complete_record)
                     else:
                         # Order is still active but state changed
@@ -844,7 +900,14 @@ class DeribitAPIInterface:
             check_risk: Whether to perform risk checks (default: True)
 
         Returns:
-            Optional[OrderSubmitResponse]: Order result with typed response or None if error
+            Optional[OrderSubmitResponse]: Typed response on success, or None on a
+                DEFINITE failure (rejected/never sent — safe to retry).
+
+        Raises:
+            IndeterminateOrderError: If the request timed out or the connection
+                dropped mid-flight. The order may or may not have reached the
+                exchange; the caller MUST reconcile via get_order_state /
+                get_open_orders before retrying, or it risks a duplicate order.
         """
         try:
             if not self.client.connected:
@@ -890,6 +953,18 @@ class DeribitAPIInterface:
 
             return response
         except Exception as e:
+            if _is_indeterminate_error(e):
+                self.logger.error(
+                    "submit_order outcome INDETERMINATE for "
+                    f"{order.instrument_name}: {e}. The order may have reached the "
+                    "exchange — reconcile via get_open_orders before retrying.")
+                raise IndeterminateOrderError(
+                    operation="submit_order",
+                    message=(f"submit_order for {order.instrument_name} timed out or "
+                             f"disconnected mid-flight; outcome unknown: {e}"),
+                    order_id=None,
+                    cause=e,
+                ) from e
             self.logger.error(f"Error submitting order: {e}")
             return None
 
@@ -925,7 +1000,10 @@ class DeribitAPIInterface:
 
         from ..classes.order_purpose import OrderPurpose
 
-        order = Order(
+        # Order is a pydantic BaseModel; every omitted field has a default. mypy
+        # without the pydantic plugin (not enabled in this repo's config) wrongly
+        # flags them as required positional args, so scope an ignore to this call.
+        order = Order(  # type: ignore[call-arg]
             instrument_name=instrument_name,
             purpose=OrderPurpose.BUY if side.lower() == "buy" else OrderPurpose.SELL,
             amount=amount,
@@ -939,7 +1017,7 @@ class DeribitAPIInterface:
 
         return await self.submit_order(order)
 
-    async def cancel_order(self, order_id: str) -> Optional[Dict[str, Any]]:
+    async def cancel_order(self, order_id: str) -> Optional[OrderCancelResponse]:
         """
         Cancel an order.
 
@@ -947,7 +1025,14 @@ class DeribitAPIInterface:
             order_id: The ID of the order to cancel
 
         Returns:
-            Optional[Dict[str, Any]]: Cancellation result or None if error
+            Optional[OrderCancelResponse]: Typed cancellation result on success,
+                or None on a DEFINITE failure (safe to retry).
+
+        Raises:
+            IndeterminateOrderError: If the request timed out or the connection
+                dropped mid-flight. The cancel may or may not have been applied;
+                the caller MUST reconcile via get_order_state before assuming the
+                order is still live (or already gone).
         """
         try:
             if not self.client.connected:
@@ -965,6 +1050,18 @@ class DeribitAPIInterface:
 
             return cancel_response
         except Exception as e:
+            if _is_indeterminate_error(e):
+                self.logger.error(
+                    f"cancel_order outcome INDETERMINATE for {order_id}: {e}. "
+                    "The cancel may or may not have applied — reconcile via "
+                    "get_order_state before acting on it.")
+                raise IndeterminateOrderError(
+                    operation="cancel_order",
+                    message=(f"cancel_order for {order_id} timed out or disconnected "
+                             f"mid-flight; outcome unknown: {e}"),
+                    order_id=order_id,
+                    cause=e,
+                ) from e
             self.logger.error(f"Error cancelling order: {e}")
             return None
 
@@ -1022,13 +1119,20 @@ class DeribitAPIInterface:
             post_only: New post_only flag (optional)
 
         Returns:
-            Optional[Dict[str, Any]]: Replacement result or None if error
+            Optional[Dict[str, Any]]: Replacement result on success, or None on a
+                DEFINITE failure (safe to retry).
+
+        Raises:
+            IndeterminateOrderError: If the request timed out or the connection
+                dropped mid-flight. The replace may or may not have been applied;
+                the caller MUST reconcile via get_order_state / get_open_orders
+                before retrying, or it risks a duplicate amend.
         """
         try:
             if not self.client.connected:
                 await self.start_client()
 
-            params = {
+            params: Dict[str, Any] = {
                 "order_id": order_id,
                 "price": price
             }
@@ -1064,6 +1168,18 @@ class DeribitAPIInterface:
 
             return result
         except Exception as e:
+            if _is_indeterminate_error(e):
+                self.logger.error(
+                    f"replace_order outcome INDETERMINATE for {order_id}: {e}. "
+                    "The amend may or may not have applied — reconcile via "
+                    "get_order_state / get_open_orders before retrying.")
+                raise IndeterminateOrderError(
+                    operation="replace_order",
+                    message=(f"replace_order for {order_id} timed out or disconnected "
+                             f"mid-flight; outcome unknown: {e}"),
+                    order_id=order_id,
+                    cause=e,
+                ) from e
             self.logger.error(f"Error replacing order: {e}")
             return None
 
@@ -1320,6 +1436,17 @@ class DeribitAPIInterface:
                 "amount": slice_size,
                 "price": current_price
             })
+
+            if order_id is None:
+                # Submit reported success but gave us no order id, so we cannot
+                # poll its state or cancel it. Surface this instead of crashing
+                # with a None order id passed to get_order_state.
+                self.logger.error(
+                    "Iceberg slice submitted but no order id was returned; "
+                    "cannot track this slice for "
+                    f"{instrument_name} (state unknown)")
+                await asyncio.sleep(0.5)
+                continue
 
             # Wait for order to fill or get cancelled
             filled_amount = 0

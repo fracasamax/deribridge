@@ -70,6 +70,20 @@ asyncio.run(main())
 A fuller runnable example lives in the `__main__` block of
 `src/deribridge/api_client/deribit_api_interface.py`.
 
+## Documentation
+
+- **[docs/GUIDE.md](docs/GUIDE.md)** — compact usage guide for developers (install,
+  config, quick start, placing orders safely).
+- **[docs/AI_REFERENCE.md](docs/AI_REFERENCE.md)** — dense technical reference for
+  building tooling (and for AI coding agents): full API surface, lifecycle &
+  concurrency model, the three-outcome order contract, and known gotchas.
+
+> **Order safety:** order-mutating calls (`submit_order`, `submit_limit_order`,
+> `cancel_order`, `replace_order`) have three outcomes — success, definite failure
+> (`None`), and **indeterminate** (`IndeterminateOrderError`, raised on
+> timeout/disconnect). On indeterminate, reconcile via `get_order_state` /
+> `get_open_orders` before retrying — never resubmit blindly. See the guides above.
+
 ## Project layout
 
 ```
@@ -89,7 +103,12 @@ package `__init__` for the full list.
 
 ## Used by
 
-- **deribook** — built on top of `deribridge`.
+- **[deribook](https://deribook.com)** — stats and advanced analytics for
+  derivatives portfolios on Deribit (greeks, P&L, risk, and more). `deribridge`
+  is the open-source client layer it's built on. If you trade options or futures
+  on Deribit and want a clearer view of your book, take a look.
+
+Using `deribridge` in your own project? Open a PR adding it here.
 
 ## ⚠️ Disclaimer
 
@@ -98,6 +117,12 @@ provided **as is**, without warranty of any kind. Trading derivatives carries
 substantial risk of loss. Use the test environment first, and you are solely
 responsible for any use in production. This project is **not affiliated with Deribit**.
 
+## Author
+
+Built and maintained by **Francesco Casamassima** ([dev@elnc.eu](mailto:dev@elnc.eu))
+— also the developer behind [deribook](https://deribook.com). Contributions, issues,
+and feedback are welcome.
+
 ## License
 
-[MIT](LICENSE) © 2026 fracasamax
+[MIT](LICENSE) © 2026 Francesco Casamassima

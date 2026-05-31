@@ -1,9 +1,8 @@
-from decimal import Decimal
 from enum import Enum
 from typing import Optional, Literal, Dict, Any
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, Field, field_validator, model_validator, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, field_serializer
 
 from ..classes.order_purpose import OrderPurpose
 
@@ -362,14 +361,11 @@ class Order(BaseModel):
         )
 
     # Pydantic configuration
-    model_config = {
-        "json_encoders": {
-            Decimal: lambda v: str(v)  # Use string for Decimal to preserve precision
-        },
-        "populate_by_name": True,  # Allow population by alias
-        "str_strip_whitespace": True,  # Strip whitespace from string values
-        "validate_assignment": True,  # Validate when values are assigned
-    }
+    model_config = ConfigDict(
+        populate_by_name=True,  # Allow population by alias
+        str_strip_whitespace=True,  # Strip whitespace from string values
+        validate_assignment=True,  # Validate when values are assigned
+    )
 
 
 # Example usage:

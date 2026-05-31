@@ -1,5 +1,5 @@
 from .websocket_api_client import DeribitWebSocketClient, DeribitWebSocketError
-from .deribit_api_interface import DeribitAPIInterface
+from .deribit_api_interface import DeribitAPIInterface, IndeterminateOrderError
 from .deribit_instrument import DeribitInstrument
 from .enhanced_api_client import EnhancedDeribitClient
 from .rate_limiter import RateLimiter
@@ -46,7 +46,9 @@ from .deribit_error_codes import DeribitError
 # The main API interface class
 __all__ = [
     "DeribitWebSocketClient",
+    "DeribitWebSocketError",
     "DeribitAPIInterface",
+    "IndeterminateOrderError",
     "DeribitInstrument",
     "EnhancedDeribitClient",
     "RateLimiter",

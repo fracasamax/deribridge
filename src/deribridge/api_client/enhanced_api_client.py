@@ -55,12 +55,14 @@ class EnhancedDeribitClient(DeribitWebSocketClient):
             List of Instrument objects
         """
         raw_result = await self.get_instruments(currency, kind, expired)
-        response = DeribitBaseResponse.from_dict({"result": raw_result})
-        return response.as_result().to_typed_result(Instrument)
+        return [Instrument.from_dict(item) for item in raw_result]
 
-    async def get_contract_size(self, instrument_name: str) -> float:
+    async def get_contract_size_value(self, instrument_name: str) -> float:
         """
-        Retrieve the contract size of a provided instrument.
+        Retrieve the contract size of a provided instrument as a float.
+
+        This is a typed convenience wrapper around the base
+        :meth:`get_contract_size`, which returns the raw response dict.
 
         Args:
             instrument_name: The name of the instrument.
@@ -71,7 +73,7 @@ class EnhancedDeribitClient(DeribitWebSocketClient):
         Raises:
             ValueError: If the returned contract size is not a number.
         """
-        raw_result = await super().get_contract_size(instrument_name)
+        raw_result = await self.get_contract_size(instrument_name)
         contract_size = raw_result.get("contract_size")
 
         if not isinstance(contract_size, (int, float)):
@@ -79,11 +81,14 @@ class EnhancedDeribitClient(DeribitWebSocketClient):
 
         return float(contract_size)
 
-    async def get_book_summary_by_currency(
-            self, currency: str, kind: str = None
+    async def get_book_summary_by_currency_model(
+            self, currency: str, kind: Optional[str] = None
     ) -> List[BookSummary]:
         """
         Retrieve the summary information for all instruments for the given currency.
+
+        Typed convenience wrapper around the base
+        :meth:`get_book_summary_by_currency`, which returns raw response dicts.
 
         Args:
             currency: The currency symbol (e.g., "BTC", "ETH").
@@ -92,18 +97,17 @@ class EnhancedDeribitClient(DeribitWebSocketClient):
         Returns:
             A list of `BookSummary` objects.
         """
-        params = {"currency": currency}
-        if kind:
-            params["kind"] = kind
-
-        response = await self.send_request("public/get_book_summary_by_currency", params)
+        response = await self.get_book_summary_by_currency(currency, kind)
         return [BookSummary.from_dict(item) for item in response]
 
-    async def get_book_summary_by_instrument(
+    async def get_book_summary_by_instrument_model(
             self, instrument_name: str
     ) -> BookSummary:
         """
         Retrieve the summary information for a specific instrument.
+
+        Typed convenience wrapper around the base
+        :meth:`get_book_summary_by_instrument`, which returns the raw response dict.
 
         Args:
             instrument_name: The name of the instrument.
@@ -111,8 +115,7 @@ class EnhancedDeribitClient(DeribitWebSocketClient):
         Returns:
             A `BookSummary` object.
         """
-        params = {"instrument_name": instrument_name}
-        response = await self.send_request("public/get_book_summary_by_instrument", params)
+        response = await self.get_book_summary_by_instrument(instrument_name)
         return BookSummary.from_dict(response)
 
     async def get_order_book_model(
@@ -141,8 +144,7 @@ class EnhancedDeribitClient(DeribitWebSocketClient):
             List of Position objects
         """
         raw_result = await self.get_positions(currency)
-        response = DeribitBaseResponse.from_dict({"result": raw_result})
-        return response.as_result().to_typed_result(Position)
+        return [Position.from_dict(item) for item in raw_result]
 
     async def get_account_summary_model(
             self,

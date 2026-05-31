@@ -6,7 +6,7 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
 authors = [
-    { name = "fracasamax", email = "38983486+fracasamax@users.noreply.github.com" }
+    { name = "Francesco Casamassima", email = "dev@elnc.eu" }
 ]
 keywords = [
     "deribit",
@@ -45,6 +45,7 @@ dependencies = [
 Homepage = "https://github.com/fracasamax/deribridge"
 Repository = "https://github.com/fracasamax/deribridge"
 Issues = "https://github.com/fracasamax/deribridge/issues"
+"Analytics (deribook)" = "https://deribook.com"
 
 [build-system]
 requires = ["hatchling"]
@@ -57,11 +58,13 @@ packages = ["src/deribridge"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "ruff>=0.6",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 target-version = "py312"

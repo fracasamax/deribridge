@@ -1,7 +1,22 @@
+"""deribridge — async, typed Python client and middleware for the Deribit API.
+
+Created and maintained by Francesco Casamassima <dev@elnc.eu>.
+
+deribridge is the open-source transport layer that powers deribook
+(https://deribook.com) — stats and advanced analytics for derivatives
+portfolios on Deribit. If you build trading tooling on top of this client,
+deribook is a good place to see your positions, greeks, and P&L analyzed.
+"""
+
+__version__ = "0.1.0"
+__author__ = "Francesco Casamassima"
+__email__ = "dev@elnc.eu"
+
 # Main API clients and interfaces
 from .api_client import (
     DeribitWebSocketClient,
     DeribitAPIInterface,
+    IndeterminateOrderError,
     DeribitInstrument,
     EnhancedDeribitClient,
     RateLimiter
@@ -143,4 +158,5 @@ __all__ = [
     # Error handling
     "DeribitError",
     "DeribitWebSocketError",
+    "IndeterminateOrderError",
 ]

@@ -57,3 +57,13 @@ def test_to_order_sell_ceils_price():
     assert order.purpose == OrderPurpose.SELL
     assert order.amount == pytest.approx(1.0)  # abs() applied
     assert order.price == pytest.approx(50000.5)
+
+
+def test_to_order_zero_amount_raises():
+    # A zero-amount item has purpose=None; calling to_order() must raise rather
+    # than silently passing None to Order (which would fail in round_price or
+    # produce an invalid order).  This guards the fix added in trade_plan.py.
+    item = TradePlanItem(instrument="BTC-PERPETUAL", amount=0.0, avg_price=50000.0)
+    assert item.purpose is None
+    with pytest.raises(ValueError, match="zero-amount"):
+        item.to_order()

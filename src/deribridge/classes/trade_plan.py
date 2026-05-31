@@ -2,7 +2,7 @@ import csv
 import math
 from typing import List, Optional, Literal
 
-from pydantic import BaseModel, Field, model_validator, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, ValidationError, field_validator
 
 from ..classes.instrument import Instrument
 from ..classes.instrument_type import InstrumentType
@@ -95,6 +95,12 @@ class TradePlanItem(BaseModel):
         instrument_name = self.instrument.instrument_name if hasattr(self.instrument, "instrument_name") else str(
             self.instrument)
 
+        # purpose must be non-None to build a directional order
+        if self.purpose is None:
+            raise ValueError(
+                "Cannot create an order from a zero-amount TradePlanItem (purpose is undefined)."
+            )
+
         # order price rounding
         rounded_price: float
         if self.instrument.instrument_type == InstrumentType.FUTURE:
@@ -111,17 +117,29 @@ class TradePlanItem(BaseModel):
             instrument_name=instrument_name,
             purpose=self.purpose,
             amount=abs(self.amount),
+            contracts=None,
             order_type=order_type,
             price=rounded_price,
             time_in_force=time_in_force,
             post_only=post_only,
+            reduce_only=None,
             reject_post_only=reject_post_only,
             advanced=advanced,
             valid_until=valid_until,
+            max_show=None,
+            trigger=None,
+            trigger_price=None,
+            max_slippage=None,
+            label=None,
+            created_at=None,
+            order_id=None,
+            order_state=None,
+            filled_amount=None,
+            average_price=None,
+            last_update_timestamp=None,
         )
 
-    class Config:
-        populate_by_name = True  # Allow population using field names and aliases
+    model_config = ConfigDict(populate_by_name=True)  # Allow population using field names and aliases
 
 
 class TradePlan(BaseModel):
@@ -138,7 +156,7 @@ class TradePlan(BaseModel):
             reader = csv.DictReader(csvfile)
             for row in reader:
                 try:
-                    item = TradePlanItem(**row)
+                    item = TradePlanItem.model_validate(row)
                     items.append(item)
                 except ValidationError as e:
                     # Log or handle validation errors for this row.

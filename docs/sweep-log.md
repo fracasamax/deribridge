@@ -56,3 +56,30 @@ performance, dead-code) over the whole package. ~50 findings.
 - **Performance (architectural):** order/position monitoring and iceberg fill-wait poll `get_order_state` instead of consuming the `user.orders` subscription; subscription dispatch is O(handlers) per message.
 - **`run_rate_limited_tasks`:** results stored by completion order, so positional `get_result(index)` can mismatch.
 - **Reconnect auth race:** connect+auth not fully held under the connection lock; private sends gated only by an `authenticated` flag.
+
+## Sweep 2026-05-31 (follow-up)
+
+**Scope:** clear the "carried over" backlog above + Pydantic v2 deprecations,
+executed by four parallel category agents (disjoint file ownership).
+
+### Signals (after)
+| Signal | Before | After |
+|--------|--------|-------|
+| Lint (ruff) | 0 | **0** |
+| Type (mypy, `--ignore-missing-imports`) | 74 | **0** |
+| Test warnings | 4 (Pydantic v2 deprecations) | **0** |
+| Tests | 23 | **58 passing** |
+
+### Resolved
+- **Type annotations — all 74 mypy errors fixed (now 0).** Implicit-Optional defaults, `None`-initialized attributes annotated/guarded, request-payload dicts typed `Dict[str, Any]`, `TaskGroup` made `Generic[T]`, `enhanced_api_client` LSP-violating overrides restructured into non-overriding typed `_model`/`_value` wrappers, `to_typed_result` list-misuse replaced with explicit comprehensions.
+- **Silent-failure redesign — done (additive).** `submit_order`/`cancel_order`/`replace_order` now raise a dedicated **`IndeterminateOrderError`** (exported from the package) on timeout/disconnect, distinguishing "unknown — reconcile via `get_order_state`" from definite failure (`None`). Backward-compatible: the definite-failure path still returns `None`. Covered by `tests/test_api_interface_safety.py`.
+- **`run_rate_limited_tasks` positional mismatch — fixed.** Results/errors are pre-sized and written at the original input index, so `get_result(index)` no longer mismatches when tasks complete out of order. Covered by `tests/test_rate_limiter.py`.
+- **Reconnect auth race — fixed.** connect→resubscribe→authenticate now run atomically under `_connection_lock`; private sends re-verify `connected and authenticated` under the lock and raise (never send) during a reconnect/re-auth window. Covered by `tests/test_websocket_safety.py`.
+- **Subscription dispatch O(handlers) → O(1).** Exact-channel dict lookup with a small wildcard fallback set.
+- **Pydantic v2 deprecations — removed.** Class-based `Config`/`json_encoders` replaced with `ConfigDict` + `@field_serializer`; dead `Decimal` encoder dropped from `Order`.
+
+### Still carried over (next sweep)
+- **Monitoring polling → subscription (architectural):** `_monitor_orders_and_positions` and iceberg fill-wait still poll `get_order_state` rather than consuming the `user.orders` subscription. Deferred — it spans the api-interface and websocket client together and warrants a dedicated, well-tested change.
+- **Mid-string wildcard channels:** `user.orders.*.raw` / `user.trades.*.raw` style channels are not matched by the dispatcher (only trailing-`*`). Behavior preserved, not yet fixed.
+- **`to_typed_result` helper signature** in `deribit_response_models.py` declares `-> T` but returns a list for list results — a latent footgun worked around at call sites.
+- **Optional:** enable the `pydantic.mypy` plugin once its bundled version is compatible with current mypy, then drop the single `# type: ignore[call-arg]`.

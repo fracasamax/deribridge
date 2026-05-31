@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 
 from ..classes.option_type import OptionType
 from ..classes.instrument_type import InstrumentType
@@ -69,8 +69,7 @@ class Instrument(BaseModel, ABC):
         # Return 0 if already expired
         return max(0.0, days_to_expiry)
 
-    class Config:
-        # Ensure datetime values are serialized as ISO strings.
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    @field_serializer("expiry")
+    def _serialize_expiry(self, value: Optional[datetime], _info) -> Optional[str]:
+        """Serialize the expiry datetime as an ISO 8601 string."""
+        return value.isoformat() if value is not None else None

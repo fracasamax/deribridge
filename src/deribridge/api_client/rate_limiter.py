@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import Dict, List, Any, Callable, TypeVar, Awaitable, Optional, Tuple, Union
+from typing import Dict, Generic, List, Any, Callable, TypeVar, Awaitable, Optional, Tuple, Union
 
 T = TypeVar('T')  # Type variable for task results
 
@@ -40,7 +40,7 @@ class RateLimiter:
             await asyncio.sleep(wait_time)
 
 
-class TaskGroup:
+class TaskGroup(Generic[T]):
     """Group of related tasks with metadata and named task access."""
 
     def __init__(
@@ -61,8 +61,10 @@ class TaskGroup:
         """
         self.name = name
         self.tasks = tasks
-        self.results: List[Optional[T]] = []
-        self.errors: List[Exception] = []
+        # Results and errors are indexed by the task's ORIGINAL input position,
+        # so they stay aligned with `tasks` regardless of completion order.
+        self.results: List[Optional[T]] = [None] * len(tasks)
+        self.errors: List[Optional[Exception]] = [None] * len(tasks)
         self.named_results: Dict[str, Optional[T]] = {}
         self.named_errors: Dict[str, Exception] = {}
 
@@ -76,6 +78,9 @@ class TaskGroup:
         """
         Get the result of a task by index or name.
 
+        The index refers to the task's original position in the input list,
+        not its completion order.
+
         Args:
             task_id: Index (int) or name (str) of the task
 
@@ -83,7 +88,7 @@ class TaskGroup:
             The task result, or None if not found
         """
         if isinstance(task_id, int):
-            # Get by index
+            # Get by original input index
             if 0 <= task_id < len(self.results):
                 return self.results[task_id]
         else:
@@ -95,6 +100,9 @@ class TaskGroup:
         """
         Get the error of a task by index or name.
 
+        The index refers to the task's original position in the input list,
+        not its completion order.
+
         Args:
             task_id: Index (int) or name (str) of the task
 
@@ -102,9 +110,10 @@ class TaskGroup:
             The task error, or None if not found
         """
         if isinstance(task_id, int):
-            # Get by index (need to search through errors)
-            errors_for_index = [e for i, e in enumerate(self.errors) if i == task_id]
-            return errors_for_index[0] if errors_for_index else None
+            # Get by original input index
+            if 0 <= task_id < len(self.errors):
+                return self.errors[task_id]
+            return None
         else:
             # Get by name
             return self.named_errors.get(task_id)
@@ -125,7 +134,7 @@ async def run_rate_limited_tasks(
         ]]],
         rate_limit: int = 5,
         error_handler: Optional[Callable[[str, Exception], None]] = None
-) -> Dict[str, TaskGroup]:
+) -> Dict[str, TaskGroup[T]]:
     """
     Run multiple groups of tasks concurrently with rate limiting.
 
@@ -143,7 +152,7 @@ async def run_rate_limited_tasks(
     limiter = RateLimiter(rate_limit)
 
     # Create task groups
-    groups = {
+    groups: Dict[str, TaskGroup[T]] = {
         name: TaskGroup(name, tasks)
         for name, tasks in task_groups.items()
     }
@@ -162,8 +171,9 @@ async def run_rate_limited_tasks(
             result = await task_fn(**task_kwargs)
             elapsed = time.monotonic() - start_time
 
-            # Store the result in the list
-            groups[group_name].results.append(result)
+            # Store the result at the task's ORIGINAL input index so positional
+            # lookups stay correct regardless of completion order.
+            groups[group_name].results[index] = result
 
             # If there's a task name, also store in the named dictionary
             if task_name:
@@ -176,10 +186,10 @@ async def run_rate_limited_tasks(
             return result
 
         except Exception as e:
-            # Store null result
-            groups[group_name].results.append(None)
-            # Store error
-            groups[group_name].errors.append(e)
+            # Store null result and the error at the task's ORIGINAL input index
+            # so positional lookups stay aligned with the input list.
+            groups[group_name].results[index] = None
+            groups[group_name].errors[index] = e
 
             # If there's a task name, also store in the named dictionary
             if task_name:

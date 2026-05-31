@@ -1,3 +1,5 @@
+from typing import Optional
+
 ERROR_CODES = {
     0: {
         "short_message": "",
@@ -605,7 +607,7 @@ def get_error_info(error_code: int) -> dict:
 class DeribitError(Exception):
     """Base exception class for Deribit API errors."""
 
-    def __init__(self, code: int, message: str = None, data: dict = None):
+    def __init__(self, code: int, message: Optional[str] = None, data: Optional[dict] = None):
         self.code = code
         self.message = message or get_error_message(code)
         self.short_message = get_short_message(code) or '-'

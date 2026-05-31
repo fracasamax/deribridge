@@ -7,9 +7,12 @@ import time
 import uuid
 from typing import Dict, List, Optional, Union, Any, Callable
 import websockets
+from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 
 from ..classes.currency import Currency
+from ..classes.order import OrderType, TimeInForce
+from ..classes.order_purpose import OrderPurpose
 from .deribit_error_codes import get_error_message, get_short_message
 
 
@@ -62,29 +65,36 @@ class DeribitWebSocketClient:
         self.is_test_env = use_test_env
 
         # WebSocket connection
-        self.ws = None
+        self.ws: Optional[ClientConnection] = None
         self.connected = False
         self.connecting = False
         self.authenticated = False
 
         # Connection management
-        self.heartbeat_task = None
-        self.message_handler_task = None
-        self.auth_refresh_task = None
-        self.reconnect_delay = 1  # Start with 1 second
+        self.heartbeat_task: Optional[asyncio.Task[None]] = None
+        self.message_handler_task: Optional[asyncio.Task[None]] = None
+        self.auth_refresh_task: Optional[asyncio.Task[None]] = None
+        self.reconnect_delay: float = 1  # Start with 1 second
         self.max_reconnect_delay = 60  # Max 60 seconds
 
         # Message handling
         self.message_id = 0
-        self.pending_requests = {}
-        self.callback_handlers = {}
-        self.subscription_channels = set()
+        self.pending_requests: Dict[int, "asyncio.Future[Any]"] = {}
+        # Exact-match channel -> callback. Subscription dispatch does an O(1)
+        # lookup here for the common case (concrete channels such as
+        # "ticker.BTC-PERPETUAL.100ms").
+        self.callback_handlers: Dict[str, Callable] = {}
+        # Subset of handlers whose channel ends in "*" (suffix wildcard, matched
+        # by prefix). Kept separate so dispatch only scans these few entries
+        # instead of every handler. Mirrors entries in callback_handlers.
+        self._wildcard_handlers: Dict[str, Callable] = {}
+        self.subscription_channels: set[str] = set()
 
         # Authentication state
-        self._access_token = None
-        self._token_expiry = 0
-        self._refresh_token = None
-        self._refresh_token_expiry = 0
+        self._access_token: Optional[str] = None
+        self._token_expiry: float = 0
+        self._refresh_token: Optional[str] = None
+        self._refresh_token_expiry: float = 0
 
         # Connection lock to prevent race conditions
         self._connection_lock = asyncio.Lock()
@@ -118,6 +128,12 @@ class DeribitWebSocketClient:
         """
         Connect to the Deribit WebSocket API.
 
+        The whole connect -> resubscribe -> authenticate sequence is performed
+        while holding ``self._connection_lock``. This makes a reconnect atomic:
+        a concurrent reconnect cannot interleave and observe a half-open,
+        unauthenticated socket, and private requests (which acquire the same
+        lock, see ``send_request``) cannot be sent during this window.
+
         Raises:
             Exception: If connection fails
         """
@@ -127,33 +143,38 @@ class DeribitWebSocketClient:
 
             self.connecting = True
 
-        try:
-            self.logger.info(f"Connecting to Deribit WebSocket API at {self.ws_url}")
-            self.ws = await websockets.connect(self.ws_url)
-            self.connected = True
-            self.reconnect_delay = 1  # Reset reconnect delay on successful connection
+            try:
+                self.logger.info(f"Connecting to Deribit WebSocket API at {self.ws_url}")
+                self.ws = await websockets.connect(self.ws_url)
+                self.connected = True
+                self.reconnect_delay = 1  # Reset reconnect delay on successful connection
 
-            # Start message handler
-            self.message_handler_task = asyncio.create_task(self._message_handler())
+                # Start message handler
+                self.message_handler_task = asyncio.create_task(self._message_handler())
 
-            # Start heartbeat task
-            self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+                # Start heartbeat task
+                self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
-            # Resubscribe to channels if any
-            if self.subscription_channels:
-                await self._resubscribe()
+                # Resubscribe to channels if any. Safe to call send_request here:
+                # self.connected is already True so it will not recurse into
+                # connect(), and we hold the lock so no other connect/reconnect
+                # can run concurrently.
+                if self.subscription_channels:
+                    await self._resubscribe()
 
-            # Reauthenticate if needed
-            if self.client_id and self.client_secret:
-                await self.authenticate()
+                # Reauthenticate if needed, still under the lock so the
+                # authenticated flag and the socket are published together.
+                if self.client_id and self.client_secret:
+                    await self._authenticate_credentials()
 
-            self.logger.info("Successfully connected to Deribit WebSocket API")
-        except Exception as e:
-            self.logger.error(f"Failed to connect to Deribit WebSocket API: {str(e)}")
-            self.connected = False
-            asyncio.create_task(self._reconnect())
-        finally:
-            self.connecting = False
+                self.logger.info("Successfully connected to Deribit WebSocket API")
+            except Exception as e:
+                self.logger.error(f"Failed to connect to Deribit WebSocket API: {str(e)}")
+                self.connected = False
+                self.authenticated = False
+                asyncio.create_task(self._reconnect())
+            finally:
+                self.connecting = False
 
     async def close(self) -> None:
         """
@@ -283,8 +304,13 @@ class DeribitWebSocketClient:
 
         self.logger.info("Refreshing authentication token")
 
+        if self.ws is None or not self.connected:
+            self.logger.warning("Cannot refresh token: not connected, re-authenticating")
+            await self.authenticate()
+            return
+
         message_id = self.next_message_id()
-        message = {
+        message: Dict[str, Any] = {
             "jsonrpc": "2.0",
             "id": message_id,
             "method": "public/auth",
@@ -294,7 +320,7 @@ class DeribitWebSocketClient:
             }
         }
 
-        future = asyncio.get_event_loop().create_future()
+        future: "asyncio.Future[Any]" = asyncio.get_event_loop().create_future()
         self.pending_requests[message_id] = future
 
         try:
@@ -325,7 +351,7 @@ class DeribitWebSocketClient:
         """
         Send a heartbeat message to the server.
         """
-        if not self.connected:
+        if not self.connected or self.ws is None:
             return
 
         try:
@@ -346,13 +372,16 @@ class DeribitWebSocketClient:
         """
         Handle incoming WebSocket messages.
         """
+        if self.ws is None:
+            self.logger.error("Message handler started without an open WebSocket")
+            return
         try:
             async for message in self.ws:
                 try:
                     data = json.loads(message)
                     await self._process_message(data)
                 except json.JSONDecodeError:
-                    self.logger.error(f"Failed to parse message: {message}")
+                    self.logger.error(f"Failed to parse message: {message!r}")
                 except Exception as e:
                     self.logger.error(f"Error processing message: {str(e)}")
         except ConnectionClosed:
@@ -394,19 +423,31 @@ class DeribitWebSocketClient:
             params = data.get("params", {})
             channel = params.get("channel")
             if channel:
-                # Call the appropriate callback handlers
-                for handler_channel, callback in self.callback_handlers.items():
-                    if channel == handler_channel or (
-                            handler_channel.endswith("*") and
-                            channel.startswith(handler_channel[:-1])
-                    ):
-                        try:
-                            if asyncio.iscoroutinefunction(callback):
-                                asyncio.create_task(callback(params))
-                            else:
-                                callback(params)
-                        except Exception as e:
-                            self.logger.error(f"Error in callback handler for {channel}: {str(e)}")
+                # O(1) exact-match dispatch for the common case.
+                callback = self.callback_handlers.get(channel)
+                if callback is not None:
+                    self._invoke_callback(callback, channel, params)
+                # Suffix-wildcard handlers (channels ending in "*") are matched
+                # by prefix. There are typically very few of these, so scanning
+                # only this subset keeps dispatch effectively O(1) per message.
+                for handler_channel, wildcard_callback in self._wildcard_handlers.items():
+                    if channel.startswith(handler_channel[:-1]):
+                        self._invoke_callback(wildcard_callback, channel, params)
+
+    def _invoke_callback(self, callback: Callable, channel: str, params: Dict[str, Any]) -> None:
+        """
+        Invoke a subscription callback, scheduling coroutine callbacks as tasks.
+
+        Errors are logged with the channel for context and never swallowed
+        silently.
+        """
+        try:
+            if asyncio.iscoroutinefunction(callback):
+                asyncio.create_task(callback(params))
+            else:
+                callback(params)
+        except Exception as e:
+            self.logger.error(f"Error in callback handler for {channel}: {str(e)}")
 
     async def _resubscribe(self) -> None:
         """
@@ -430,7 +471,7 @@ class DeribitWebSocketClient:
     async def send_request(
             self,
             method: str,
-            params: Dict[str, Any] = None,
+            params: Optional[Dict[str, Any]] = None,
             auth_required: bool = False
     ) -> Any:
         """
@@ -453,18 +494,34 @@ class DeribitWebSocketClient:
             if not self.connected:
                 raise ConnectionError("Not connected to WebSocket")
 
-        if auth_required and not self.authenticated:
-            await self.authenticate()
+        if auth_required:
+            # Authenticate if needed, then re-check the auth state while holding
+            # the connection lock. This closes the reconnect/re-auth window: a
+            # private request can only be dispatched once a concurrent
+            # connect/reconnect has fully completed and we are still
+            # authenticated on the *current* socket.
+            if not self.authenticated:
+                await self.authenticate()
+            async with self._connection_lock:
+                if not (self.connected and self.authenticated):
+                    raise DeribitWebSocketError(
+                        -1,
+                        f"Cannot send private request '{method}': "
+                        "connection not authenticated (reconnect in progress)"
+                    )
+
+        if self.ws is None or not self.connected:
+            raise ConnectionError("Not connected to WebSocket")
 
         message_id = self.next_message_id()
-        message = {
+        message: Dict[str, Any] = {
             "jsonrpc": "2.0",
             "id": message_id,
             "method": method,
             "params": params or {}
         }
         # print(f"Sending request: {message}")
-        future = asyncio.get_event_loop().create_future()
+        future: "asyncio.Future[Any]" = asyncio.get_event_loop().create_future()
         self.pending_requests[message_id] = future
 
         try:
@@ -532,8 +589,11 @@ class DeribitWebSocketClient:
         ).hexdigest()
 
         # Create authentication message
+        if self.ws is None or not self.connected:
+            raise ConnectionError("Not connected to WebSocket")
+
         message_id = self.next_message_id()
-        message = {
+        message: Dict[str, Any] = {
             "jsonrpc": "2.0",
             "id": message_id,
             "method": "public/auth",
@@ -548,7 +608,7 @@ class DeribitWebSocketClient:
         }
 
         # Set up future for response
-        future = asyncio.get_event_loop().create_future()
+        future: "asyncio.Future[Any]" = asyncio.get_event_loop().create_future()
         self.pending_requests[message_id] = future
 
         try:
@@ -590,6 +650,25 @@ class DeribitWebSocketClient:
         """
         Authenticate with the Deribit API using client credentials.
 
+        Public entry point. Acquires the connection lock so that authentication
+        cannot interleave with a concurrent connect/reconnect, then delegates to
+        ``_authenticate_credentials``.
+
+        Returns:
+            Authentication result
+
+        Raises:
+            DeribitWebSocketError: If authentication fails
+        """
+        async with self._connection_lock:
+            return await self._authenticate_credentials()
+
+    async def _authenticate_credentials(self) -> Dict:
+        """
+        Core client-credentials authentication. Assumes the caller holds (or is
+        intentionally bypassing) ``self._connection_lock``; it does NOT acquire
+        the lock itself so it can be reused from inside ``connect``.
+
         Returns:
             Authentication result
 
@@ -610,9 +689,12 @@ class DeribitWebSocketClient:
             self.auth_refresh_task.cancel()
             self.auth_refresh_task = None
 
+        if self.ws is None or not self.connected:
+            raise ConnectionError("Not connected to WebSocket")
+
         # Authenticate with credentials
         message_id = self.next_message_id()
-        message = {
+        message: Dict[str, Any] = {
             "jsonrpc": "2.0",
             "id": message_id,
             "method": "public/auth",
@@ -623,7 +705,7 @@ class DeribitWebSocketClient:
             }
         }
 
-        future = asyncio.get_event_loop().create_future()
+        future: "asyncio.Future[Any]" = asyncio.get_event_loop().create_future()
         self.pending_requests[message_id] = future
 
         try:
@@ -908,7 +990,7 @@ class DeribitWebSocketClient:
         # Use mapped value if available, otherwise use original (assuming it's already correct)
         api_resolution = resolution_map.get(resolution, resolution)
 
-        params = {
+        params: Dict[str, Any] = {
             "instrument_name": instrument_name,
             "resolution": api_resolution
         }
@@ -929,11 +1011,11 @@ class DeribitWebSocketClient:
             self,
             instrument_name: str,
             amount: float,
-            purpose: str,
-            order_type: str = "limit",
+            purpose: Union[str, OrderPurpose],
+            order_type: Union[str, OrderType] = "limit",
             price: Optional[float] = None,
-            time_in_force: str = "good_til_cancelled",
-            **kwargs
+            time_in_force: Union[str, TimeInForce] = "good_til_cancelled",
+            **kwargs: Any
     ) -> Dict:
         """
         Submit a new order.
@@ -941,25 +1023,35 @@ class DeribitWebSocketClient:
         Args:
             instrument_name: The name of the instrument
             amount: Order amount (in contracts for futures/options)
-            purpose: Order side ("buy" or "sell")
-            order_type: Order type ("limit", "market", "stop_limit", "stop_market")
+            purpose: Order side ("buy" or "sell"), as a string or OrderPurpose
+            order_type: Order type ("limit", "market", "stop_limit", "stop_market"),
+                as a string or OrderType
             price: Order price (required for limit orders)
-            time_in_force: Time in force policy ("good_til_cancelled", "fill_or_kill", "immediate_or_cancel")
+            time_in_force: Time in force policy ("good_til_cancelled", "fill_or_kill",
+                "immediate_or_cancel"), as a string or TimeInForce
             **kwargs: Additional parameters for the order
 
         Returns:
             Order details
         """
+        # Normalise enum-or-string inputs to their wire (string) representation.
+        # Callers pass either the str/TimeInForce/OrderType/OrderPurpose enums
+        # (e.g. via Order.api_params(), which serialises purpose to a string but
+        # leaves order_type/time_in_force as enum members) or plain strings.
+        order_type_str: str = getattr(order_type, "value", order_type)
+        time_in_force_str: str = getattr(time_in_force, "value", time_in_force)
+        purpose_str: str = getattr(purpose, "value", purpose)
+
         # Validate required parameters
-        if order_type.lower() in ["limit", "stop_limit"] and price is None:
+        if order_type_str.lower() in ["limit", "stop_limit"] and price is None:
             raise ValueError("Price is required for limit orders")
 
-        params = {
+        params: Dict[str, Any] = {
             "instrument_name": instrument_name,
             "amount": amount,
             # "contracts": amount,
-            "type": order_type.value,
-            "time_in_force": time_in_force.value,
+            "type": order_type_str,
+            "time_in_force": time_in_force_str,
             **kwargs
         }
 
@@ -967,10 +1059,10 @@ class DeribitWebSocketClient:
             params["price"] = price
 
         # enforce the required parameter direction [buy, sell]
-        params["direction"] = purpose.lower()
+        params["direction"] = purpose_str.lower()
 
         # Use the private order API endpoint
-        method = f"private/{purpose.lower()}"
+        method = f"private/{purpose_str.lower()}"
         return await self.send_request(method, params, auth_required=True)
 
     async def get_account_summary(self,
@@ -988,7 +1080,7 @@ class DeribitWebSocketClient:
         Returns:
             Account summary data
         """
-        params = {"currency": currency, }
+        params: Dict[str, Any] = {"currency": currency, }
         if subaccount_id is not None:
             params["subaccount_id"] = subaccount_id
         if extended:
@@ -1059,7 +1151,7 @@ class DeribitWebSocketClient:
             Canceled orders details
         """
         # params = {"detailed": False, 'freeze_quotes': False} both are default, chosen not to set them
-        params = {}
+        params: Dict[str, Any] = {}
         return await self.send_request("private/cancel_all", params, auth_required=True)
 
     async def cancel_all_orders_by_currency(self, currency: str) -> Dict:
@@ -1184,7 +1276,7 @@ class DeribitWebSocketClient:
 
         Requires authentication with scope: account:read
         """
-        params = {"currency": currency}
+        params: Dict[str, Any] = {"currency": currency}
 
         if add_positions is not None:
             params["add_positions"] = add_positions
@@ -1424,6 +1516,8 @@ class DeribitWebSocketClient:
         if callback:
             for channel in channels:
                 self.callback_handlers[channel] = callback
+                if channel.endswith("*"):
+                    self._wildcard_handlers[channel] = callback
 
         result = await self.send_request("public/subscribe", {
             "channels": channels
@@ -1456,6 +1550,7 @@ class DeribitWebSocketClient:
         for channel in channels:
             self.subscription_channels.discard(channel)
             self.callback_handlers.pop(channel, None)
+            self._wildcard_handlers.pop(channel, None)
 
         return result
 
@@ -1474,6 +1569,7 @@ class DeribitWebSocketClient:
         # Clear subscription set
         self.subscription_channels.clear()
         self.callback_handlers.clear()
+        self._wildcard_handlers.clear()
 
         return result
 

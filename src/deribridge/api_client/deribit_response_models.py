@@ -1399,7 +1399,7 @@ class OrderCancelResponse:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert the response model to a dictionary."""
-        result = {
+        result: Dict[str, Any] = {
             "success": self.is_successful,
         }
 
