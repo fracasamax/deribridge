@@ -4,6 +4,7 @@
 
 Built and maintained by **Francesco Casamassima** ([dev@elnc.eu](mailto:dev@elnc.eu)).
 `deribridge` is the open-source client layer behind **[deribook](https://deribook.com)** — stats and advanced analytics for derivatives portfolios on Deribit.
+If you want the portfolio analytics experience rather than the client library, visit **[deribook.com](https://deribook.com)**.
 
 ---
 
@@ -208,3 +209,5 @@ Imported directly from `deribridge`:
 ## Further reading
 
 See [`docs/AI_REFERENCE.md`](./AI_REFERENCE.md) for the full technical reference: method signatures, error codes, subscription channels, response model field definitions, and internal architecture notes.
+
+To see `deribridge` in use as part of a real-time Deribit portfolio analytics product, visit [deribook.com](https://deribook.com).

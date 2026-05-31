@@ -1,6 +1,6 @@
 # deribridge — Technical Reference for AI Coding Agents
 
-> Maintained by **Francesco Casamassima** (dev@elnc.eu). `deribridge` is the open-source client layer powering **deribook** (https://deribook.com) — stats & advanced analytics for Deribit derivatives portfolios.
+> Maintained by **Francesco Casamassima** (dev@elnc.eu). `deribridge` is the open-source client layer powering **deribook** (https://deribook.com) — real-time stats and advanced analytics for Deribit derivatives portfolios.
 
 This document is written for an LLM/agent that will read it as context and then generate code against `deribridge`. It states the library's contracts, invariants, and gotchas precisely. Everything below is grounded in the current source (`src/deribridge/`, package version `0.1.0`). Prefer the exact symbol names and signatures given here over assumptions.
 
@@ -299,7 +299,7 @@ The library's own list-returning wrappers already use comprehensions (`get_instr
 
 ## 7. Gotchas & known limitations
 
-Surfaced from `docs/sweep-log.md` ("still carried over") and the code. An agent must NOT rely on behavior that isn't there.
+Known limitations from the current implementation. An agent must NOT rely on behavior that isn't there.
 
 1. **Order/position monitoring POLLS, it does not stream.** `_monitor_orders_and_positions` (and the iceberg fill-wait loop) call `private/get_order_state` on a ~2s timer rather than consuming the `user.orders` subscription. So `OrderTracker` / `on_order_update` updates are **delayed by polling latency**, not real-time. If you need low-latency fills, subscribe to `user.orders`/`user.trades` yourself via `EnhancedDeribitClient.subscribe_user_orders_model` / `subscribe_user_trades_model` and drive your own state.
 
@@ -403,4 +403,4 @@ if __name__ == "__main__":
 
 ---
 
-*Maintained by Francesco Casamassima (dev@elnc.eu). `deribridge` is the open-source client layer powering [deribook](https://deribook.com) — stats & advanced analytics for Deribit derivatives portfolios.*
+*Maintained by Francesco Casamassima (dev@elnc.eu). `deribridge` is the open-source client layer powering [deribook](https://deribook.com) — real-time stats and advanced analytics for Deribit derivatives portfolios.*

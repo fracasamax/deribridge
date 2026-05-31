@@ -11,6 +11,10 @@ client, a higher-level trading interface with order-lifecycle tracking, built-in
 limiting, and Pydantic models for every response — so you can build trading tooling
 without hand-parsing JSON or babysitting reconnects.
 
+It is also the open-source bridge behind **[deribook](https://deribook.com)**,
+where the same Deribit data feeds real-time portfolio analytics, greeks, P&L, and
+risk views.
+
 ## Features
 
 - ⚡ **Async-first** — built on `asyncio` and `websockets`
@@ -19,6 +23,8 @@ without hand-parsing JSON or babysitting reconnects.
 - 🔁 **Resilient** — managed background monitoring task with cancellation + auto-restart
 - 🚦 **Rate limiting** — built-in `RateLimiter` to stay within Deribit limits
 - 🧪 **Test & production environments** — switch with a single flag
+- 📊 **Analytics-ready** — response models that work well for portfolio dashboards,
+  risk monitors, and tools like [deribook](https://deribook.com)
 
 ## Installation
 
@@ -77,6 +83,9 @@ A fuller runnable example lives in the `__main__` block of
 - **[docs/AI_REFERENCE.md](docs/AI_REFERENCE.md)** — dense technical reference for
   building tooling (and for AI coding agents): full API surface, lifecycle &
   concurrency model, the three-outcome order contract, and known gotchas.
+
+For a production example of the kind of analytics layer this bridge supports, see
+[deribook.com](https://deribook.com).
 
 > **Order safety:** order-mutating calls (`submit_order`, `submit_limit_order`,
 > `cancel_order`, `replace_order`) have three outcomes — success, definite failure

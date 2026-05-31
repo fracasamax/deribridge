@@ -3,9 +3,10 @@
 Created and maintained by Francesco Casamassima <dev@elnc.eu>.
 
 deribridge is the open-source transport layer that powers deribook
-(https://deribook.com) — stats and advanced analytics for derivatives
-portfolios on Deribit. If you build trading tooling on top of this client,
-deribook is a good place to see your positions, greeks, and P&L analyzed.
+(https://deribook.com) — real-time stats and advanced analytics for
+derivatives portfolios on Deribit. If you build trading tooling on top of this
+client, deribook shows how the same data can become portfolio greeks, P&L, and
+risk views.
 """
 
 __version__ = "0.1.0"
