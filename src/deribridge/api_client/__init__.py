@@ -2,7 +2,7 @@ from .websocket_api_client import DeribitWebSocketClient, DeribitWebSocketError
 from .deribit_api_interface import DeribitAPIInterface
 from .deribit_instrument import DeribitInstrument
 from .enhanced_api_client import EnhancedDeribitClient
-from .RateLimiter import RateLimiter
+from .rate_limiter import RateLimiter
 
 # Response models and data structures
 from .deribit_response_models import (

@@ -108,7 +108,6 @@ class TaskGroup:
         else:
             # Get by name
             return self.named_errors.get(task_id)
-        return None
 
     def get_task_name(self, index: int) -> Optional[str]:
         """Get the name of a task by index."""

@@ -10,7 +10,6 @@ from ..classes.order import Order, OrderType, TimeInForce
 from .enhanced_api_client import EnhancedDeribitClient
 from .deribit_response_models import OrderBook, Ticker, Position, Order as OrderModel, \
     OrderSubmitResponse, OrderCancelResponse
-from .client_management import connect_deribit_client
 
 
 class OrderTracker:
@@ -587,18 +586,13 @@ class DeribitAPIInterface:
                         complete_record = await self.order_tracker.remove_order(
                             order_id, order_state)
 
-                        # Calculate P&L for filled orders
+                        # Record P&L for filled orders.
                         if order_state.get("order_state") == "filled":
-                            # Simple estimate - can be expanded with more detailed P&L calculation
-                            filled_amount = order_state.get("filled_amount", 0)
-                            avg_price = order_state.get("average_price", 0)
-                            direction = 1 if order_state.get(
-                                "direction") == "buy" else -1
-
-                            # This is just a placeholder - actual P&L would depend on entry price
-                            # and would need to be calculated against position cost basis
-                            # Would calculate: (exit_price - entry_price) * size * direction
-                            estimated_pnl = 0
+                            # Placeholder: real P&L needs the position cost basis,
+                            # i.e. (exit_price - entry_price) * size * direction.
+                            # Until that is wired up, record a neutral 0 so the
+                            # circuit breakers do not act on bogus numbers.
+                            estimated_pnl = 0.0
                             self.risk_manager.record_trade_pnl(estimated_pnl)
 
                         # Call the order update callback if defined

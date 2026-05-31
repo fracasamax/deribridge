@@ -83,10 +83,6 @@ from .api_client.deribit_error_codes import DeribitError
 from .api_client.websocket_api_client import DeribitWebSocketError
 
 
-def main() -> None:
-    print("Hello from deribridge!")
-
-
 # Define what's available when using "from deribridge import *"
 __all__ = [
     # Main API clients
@@ -147,7 +143,4 @@ __all__ = [
     # Error handling
     "DeribitError",
     "DeribitWebSocketError",
-
-    # Entry point
-    "main",
 ]
