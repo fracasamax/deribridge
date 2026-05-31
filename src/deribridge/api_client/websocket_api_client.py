@@ -43,7 +43,7 @@ class DeribitWebSocketClient:
             client_id: Optional[str] = None,
             client_secret: Optional[str] = None,
             use_test_env: bool = False,
-            auto_connect: bool = True,
+            auto_connect: bool = False,
             heartbeat_interval: int = 30,
     ):
         """
@@ -53,7 +53,11 @@ class DeribitWebSocketClient:
             client_id: Your Deribit API client ID (optional for public endpoints)
             client_secret: Your Deribit API client secret (optional for public endpoints)
             use_test_env: Whether to use the test environment (default: False)
-            auto_connect: Whether to automatically connect on initialization (default: True)
+            auto_connect: Whether to automatically connect on initialization
+                (default: False). When True, schedules a background connect()
+                task, which requires a running event loop; construction then
+                performs implicit network I/O. Leave False and call connect()
+                explicitly unless you are constructing from within a running loop.
             heartbeat_interval: Interval in seconds for sending heartbeats (default: 30)
         """
         self.client_id = str(client_id).strip() if client_id else ""
@@ -1405,7 +1409,11 @@ class DeribitWebSocketClient:
         Returns:
             Subscription result
         """
-        channel = f"user.orders.{instrument_name or '*'}.raw"
+        channel = (
+            f"user.orders.{instrument_name}.raw"
+            if instrument_name
+            else "user.orders.any.any.raw"
+        )
         return await self.subscribe(channel, callback)
 
     async def subscribe_user_trades(
@@ -1423,7 +1431,11 @@ class DeribitWebSocketClient:
         Returns:
             Subscription result
         """
-        channel = f"user.trades.{instrument_name or '*'}.raw"
+        channel = (
+            f"user.trades.{instrument_name}.raw"
+            if instrument_name
+            else "user.trades.any.any.raw"
+        )
         return await self.subscribe(channel, callback)
 
     async def subscribe_user_portfolio(

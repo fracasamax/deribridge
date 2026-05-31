@@ -366,29 +366,3 @@ class Order(BaseModel):
         str_strip_whitespace=True,  # Strip whitespace from string values
         validate_assignment=True,  # Validate when values are assigned
     )
-
-
-# Example usage:
-if __name__ == "__main__":
-    # Create a limit buy order
-    order = Order.limit_buy(
-        instrument_name="BTC-PERPETUAL",
-        amount=0.1,
-        price=50000,
-        post_only=True
-    )
-
-    # Convert to dictionary for API submission
-    params = order.api_params()
-    print("Order parameters for API submission:")
-    print(params)
-
-    # Create a market sell order
-    market_order = Order.market_sell(
-        instrument_name="BTC-PERPETUAL",
-        amount=0.1,
-        reduce_only=True
-    )
-
-    print("\nMarket order parameters:")
-    print(market_order.api_params())

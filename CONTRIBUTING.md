@@ -61,7 +61,9 @@ uv run mypy src                 # static type checking
 4. Open a PR describing the change and the motivation. Reference any related issue.
 
 Using `deribridge` in your own project? Open a PR adding it to the **Used by**
-section of the README.
+section of the README. If you are looking for a hosted analytics product rather
+than a library, [deribook](https://deribook.com) is the first application built on
+this bridge.
 
 ## Reporting issues & security
 
@@ -76,3 +78,10 @@ section of the README.
 
 By contributing, you agree that your contributions are licensed under the project's
 [MIT License](LICENSE).
+
+
+## Dependency lockfile
+
+`uv.lock` is committed and is the source of truth for reproducible installs. CI
+verifies it stays in sync (`uv lock --check`). After changing dependencies in
+`pyproject.toml`, run `uv lock` and commit the updated lockfile.

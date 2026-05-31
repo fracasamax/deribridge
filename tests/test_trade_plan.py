@@ -67,3 +67,23 @@ def test_to_order_zero_amount_raises():
     assert item.purpose is None
     with pytest.raises(ValueError, match="zero-amount"):
         item.to_order()
+
+
+def test_from_csv_strict_raises_on_bad_row(tmp_path):
+    import pytest
+    from deribridge.classes.trade_plan import TradePlan
+
+    p = tmp_path / "plan.csv"
+    p.write_text("Instrument,Amount\nBTC-PERPETUAL,notanumber\n")
+    with pytest.raises(ValueError):
+        TradePlan.from_csv(str(p), strict=True)
+
+
+def test_from_csv_nonstrict_collects_errors(tmp_path):
+    from deribridge.classes.trade_plan import TradePlan
+
+    p = tmp_path / "plan.csv"
+    p.write_text("Instrument,Amount\nBTC-PERPETUAL,notanumber\n")
+    plan = TradePlan.from_csv(str(p))
+    assert plan is not None
+    assert plan.errors and plan.errors[0]["row"] == 1

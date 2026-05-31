@@ -7,6 +7,7 @@ from collections import deque
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Callable, Tuple
 
+from dotenv import load_dotenv
 from websockets.exceptions import ConnectionClosed
 
 from ..classes.order import Order, OrderType, TimeInForce
@@ -65,6 +66,20 @@ def _is_indeterminate_error(exc: Exception) -> bool:
     if isinstance(exc, DeribitWebSocketError) and exc.code == _TIMEOUT_ERROR_CODE:
         return True
     return False
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    """Opt-in convenience for examples and scripts.
+
+    Libraries should NOT call this — it mutates the root logger via
+    ``logging.basicConfig``. It is provided so example code can set up console
+    logging in a single line; application code should configure logging itself.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
 
 
 class OrderTracker:
@@ -368,15 +383,11 @@ class DeribitAPIInterface:
             use_test_env: Whether to use test environment (default: False)
             log_level: Logging level (default: logging.INFO)
         """
-        # Configure logging
-        logging.basicConfig(
-            level=log_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.StreamHandler(sys.stdout)
-            ]
-        )
-        self.logger = logging.getLogger("DeribitAPI")
+        # Library code must not configure the root logger (that is the host
+        # application's job). Use a namespaced logger and respect whatever
+        # logging policy the host has set. Call deribridge.configure_logging()
+        # explicitly from scripts/examples if you want console output.
+        self.logger = logging.getLogger("deribridge.api")
 
         # Use provided client or create new one
         self.client = client or EnhancedDeribitClient(
@@ -424,7 +435,8 @@ class DeribitAPIInterface:
             client_secret: Optional[str] = None,
             use_test_env: bool = True,
             log_level: int = logging.INFO,
-            risk_config: Optional[Dict[str, Any]] = None
+            risk_config: Optional[Dict[str, Any]] = None,
+            load_dotenv_file: bool = True,
     ) -> 'DeribitAPIInterface':
         """
         Create and configure a new DeribitAPIInterface instance.
@@ -436,10 +448,15 @@ class DeribitAPIInterface:
             use_test_env: Whether to use the test environment (default: True)
             log_level: Logging level (default: logging.INFO)
             risk_config: Risk management configuration (optional)
+            load_dotenv_file: If True (default), call python-dotenv's
+                load_dotenv() to populate os.environ from a .env file before
+                reading credentials. Pass False to disable any cwd file read.
 
         Returns:
             A configured DeribitAPIInterface instance
         """
+        if load_dotenv_file:
+            load_dotenv()
         if not client and not client_id:
             # Load API credentials from environment variables
             client_id = os.environ.get(
@@ -1073,7 +1090,13 @@ class DeribitAPIInterface:
             instrument_name: Optional instrument name to filter
 
         Returns:
-            Optional[Dict[str, Any]]: Cancellation result or None if error
+            Optional[Dict[str, Any]]: Cancellation result on success, or None on
+                a DEFINITE failure.
+
+        Raises:
+            IndeterminateOrderError: If the request timed out or the socket
+                dropped mid-flight, so some/all cancels may have applied.
+                Reconcile via get_open_orders before retrying.
         """
         try:
             if not self.client.connected:
@@ -1099,6 +1122,21 @@ class DeribitAPIInterface:
 
             return result
         except Exception as e:
+            if _is_indeterminate_error(e):
+                self.logger.error(
+                    f"cancel_all_orders outcome INDETERMINATE: {e}. Some/all "
+                    "cancels may have applied — reconcile via get_open_orders "
+                    "before retrying."
+                )
+                raise IndeterminateOrderError(
+                    operation="cancel_all_orders",
+                    message=(
+                        f"cancel_all_orders timed out or disconnected mid-flight; "
+                        f"outcome unknown: {e}"
+                    ),
+                    order_id=None,
+                    cause=e,
+                ) from e
             self.logger.error(f"Error cancelling all orders: {e}")
             return None
 
@@ -1192,7 +1230,13 @@ class DeribitAPIInterface:
             type: Order type for closing (default: "market")
 
         Returns:
-            Optional[Dict[str, Any]]: Result or None if error
+            Optional[Dict[str, Any]]: Close result on success, or None on a
+                DEFINITE failure.
+
+        Raises:
+            IndeterminateOrderError: If the request timed out or the socket
+                dropped mid-flight, so the position may or may not be closed.
+                Reconcile via get_positions before acting.
         """
         try:
             if not self.client.connected:
@@ -1210,6 +1254,21 @@ class DeribitAPIInterface:
 
             return result
         except Exception as e:
+            if _is_indeterminate_error(e):
+                self.logger.error(
+                    f"close_position outcome INDETERMINATE for {instrument_name}: "
+                    f"{e}. The position may or may not have been closed — reconcile "
+                    "via get_positions before acting."
+                )
+                raise IndeterminateOrderError(
+                    operation="close_position",
+                    message=(
+                        f"close_position for {instrument_name} timed out or "
+                        f"disconnected mid-flight; outcome unknown: {e}"
+                    ),
+                    order_id=None,
+                    cause=e,
+                ) from e
             self.logger.error(f"Error closing position: {e}")
             return None
 
@@ -1221,7 +1280,11 @@ class DeribitAPIInterface:
             currency: Optional currency to filter
 
         Returns:
-            List[Dict[str, Any]]: Results for each position closure
+            List[Dict[str, Any]]: One result dict per position. Each has
+                ``success``; an indeterminate close (timeout/disconnect) is
+                recorded with ``indeterminate=True`` and ``success=False`` rather
+                than aborting the batch — reconcile those via get_positions
+                before retrying.
         """
         results = []
 
@@ -1254,6 +1317,17 @@ class DeribitAPIInterface:
                             "success": False,
                             "error": "close_position returned no result (state unknown)"
                         })
+                except IndeterminateOrderError as e:
+                    self.logger.error(
+                        f"close_position INDETERMINATE for {instrument}: {e}. "
+                        "Position state unknown; not retrying in-batch."
+                    )
+                    results.append({
+                        "instrument": instrument,
+                        "success": False,
+                        "indeterminate": True,
+                        "error": str(e)
+                    })
                 except Exception as e:
                     results.append({
                         "instrument": instrument,
@@ -1516,89 +1590,3 @@ class DeribitAPIInterface:
         }
 
         return metrics
-
-
-# Example usage
-if __name__ == "__main__":
-    from dotenv import load_dotenv
-
-    # Load API credentials from environment variables
-    load_dotenv()
-
-
-    # Create an async main function
-
-    async def main():
-        # Whether to use test environment
-        use_test_env = True
-
-        # Risk configuration
-        risk_config = {
-            "max_position_size": {
-                "BTC-PERPETUAL": 1.0,  # Max 1 BTC position
-            },
-            "max_order_size": {
-                "BTC-PERPETUAL": 0.1,  # Max 0.1 BTC per order
-            },
-            "max_daily_loss": 100.0,  # Max $100 daily loss
-            "sequential_loss_limit": 3  # Max 3 consecutive losses
-        }
-
-        # Initialize API interface
-        api = DeribitAPIInterface.configure(
-            use_test_env=use_test_env,
-            risk_config=risk_config
-        )
-
-        # Example of how these functions would be called from an application
-        print("Starting WebSocket API...")
-        success = await api.start_client()
-        if success:
-            print("Connection successful")
-
-            # Subscribe to BTC-PERPETUAL order book
-            await api.subscribe_to_order_book("BTC-PERPETUAL")
-
-            # Subscribe to ticker
-            await api.subscribe_to_ticker("BTC-PERPETUAL")
-
-            # Get current market data
-            ticker = await api.get_ticker("BTC-PERPETUAL")
-            if ticker:
-                print(f"Current BTC-PERPETUAL price: {ticker.mark_price}")
-
-            # Place a limit order
-            order_result = await api.submit_limit_order(
-                instrument_name="BTC-PERPETUAL",
-                side="buy",
-                amount=0.01,  # Small test amount
-                price=ticker.mark_price * 0.99 if ticker else 20000,  # 1% below market
-                post_only=True
-            )
-
-            if order_result and order_result.order and order_result.order.order_id:
-                order_id = order_result.order.order_id
-                print(f"Order placed successfully: {order_id}")
-
-                # Wait a moment and cancel the order
-                await asyncio.sleep(5)
-                cancel_result = await api.cancel_order(order_id)
-                print(f"Order cancelled: {cancel_result}")
-
-            # Get performance metrics
-            metrics = await api.get_performance_metrics()
-            print(f"Performance metrics: {metrics}")
-
-            # Disconnect
-            print("\nStopping WebSocket API...")
-            success = await api.stop_client()
-            if success:
-                print("Disconnection successful")
-            else:
-                print("Disconnection failed")
-        else:
-            print("Connection failed")
-
-
-    # Run the async main function
-    asyncio.run(main())

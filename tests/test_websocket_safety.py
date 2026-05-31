@@ -10,7 +10,7 @@ live connection (the WebSocket transport is mocked):
 - enum-or-string normalisation in submit_order.
 """
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -208,3 +208,59 @@ async def test_submit_order_accepts_string_inputs():
     assert method == "private/sell"
     assert params["type"] == "market"
     assert params["direction"] == "sell"
+
+
+# --------------------------------------------------------------------------- #
+# No implicit connect from the constructor
+# --------------------------------------------------------------------------- #
+def test_constructor_does_not_auto_connect_by_default():
+    """Default construction must not schedule a connect task (no implicit I/O)."""
+    with patch.object(
+        DeribitWebSocketClient, "connect", new=AsyncMock()
+    ) as mock_connect:
+        DeribitWebSocketClient(client_id="x", client_secret="y")
+    mock_connect.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# All-user subscriptions use exact-match channels (not mid-string wildcards)
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_subscribe_user_orders_all_users_uses_exact_match_channel(monkeypatch):
+    """subscribe_user_orders(None) must use Deribit's exact-match all-user
+    channel (user.orders.any.any.raw); a mid-string '*' wildcard is never
+    matched by the dispatcher."""
+    client = _make_client(authenticated=True)
+    captured = {}
+
+    async def fake_subscribe(channel, callback=None, *args, **kwargs):
+        captured["channel"] = channel
+        client.callback_handlers[channel] = callback
+        return {"ok": True}
+
+    monkeypatch.setattr(client, "subscribe", fake_subscribe)
+    hits = []
+    await client.subscribe_user_orders(None, lambda m: hits.append(m))
+
+    assert captured["channel"] == "user.orders.any.any.raw"
+    await client._process_message(
+        {
+            "method": "subscription",
+            "params": {"channel": "user.orders.any.any.raw", "data": 1},
+        }
+    )
+    assert hits
+
+
+@pytest.mark.asyncio
+async def test_subscribe_user_trades_all_users_uses_exact_match_channel(monkeypatch):
+    client = _make_client(authenticated=True)
+    captured = {}
+
+    async def fake_subscribe(channel, callback=None, *args, **kwargs):
+        captured["channel"] = channel
+        return {"ok": True}
+
+    monkeypatch.setattr(client, "subscribe", fake_subscribe)
+    await client.subscribe_user_trades(None, lambda m: None)
+    assert captured["channel"] == "user.trades.any.any.raw"

@@ -1,8 +1,12 @@
 import asyncio
+import logging
 import time
 from typing import Dict, Generic, List, Any, Callable, TypeVar, Awaitable, Optional, Tuple, Union
 
 T = TypeVar('T')  # Type variable for task results
+
+
+logger = logging.getLogger("deribridge.rate_limiter")
 
 
 class RateLimiter:
@@ -181,7 +185,7 @@ async def run_rate_limited_tasks(
 
             # For logging
             task_id = task_name if task_name else f"{index}"
-            print(f"✓ {group_name} task {task_id} completed in {elapsed:.3f}s")
+            logger.debug(f"✓ {group_name} task {task_id} completed in {elapsed:.3f}s")
 
             return result
 
@@ -200,7 +204,7 @@ async def run_rate_limited_tasks(
                 error_handler(group_name, e)
             else:
                 task_id = task_name if task_name else f"{index}"
-                print(f"✗ Error in {group_name} task {task_id}: {str(e)}")
+                logger.error(f"✗ Error in {group_name} task {task_id}: {str(e)}")
 
             return None
 

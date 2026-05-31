@@ -1,6 +1,6 @@
 import csv
 import math
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator, ValidationError, field_validator
 
@@ -144,24 +144,35 @@ class TradePlanItem(BaseModel):
 
 class TradePlan(BaseModel):
     items: List[TradePlanItem]
+    errors: List[Dict[str, Any]] = Field(default_factory=list)
 
     @classmethod
-    def from_csv(cls, filepath: str) -> "TradePlan":
-        """
-        Create a TradePlan from a CSV file.
+    def from_csv(cls, filepath: str, strict: bool = False) -> "TradePlan":
+        """Create a TradePlan from a CSV file.
+
         Only 'Instrument' and 'Amount' are required; other fields are optional.
+
+        Args:
+            filepath: Path to the CSV file.
+            strict: If True, raise ValueError on the first invalid row. If
+                False (default), invalid rows are recorded in ``errors`` instead
+                of being printed and silently dropped.
         """
         items: List[TradePlanItem] = []
-        with open(filepath, newline='', encoding='utf-8') as csvfile:
+        errors: List[Dict[str, Any]] = []
+        with open(filepath, newline="", encoding="utf-8") as csvfile:
             reader = csv.DictReader(csvfile)
-            for row in reader:
+            for i, row in enumerate(reader, start=1):
                 try:
-                    item = TradePlanItem.model_validate(row)
-                    items.append(item)
+                    items.append(TradePlanItem.model_validate(row))
                 except ValidationError as e:
-                    # Log or handle validation errors for this row.
-                    print(f"Validation error for row {row}: {e.json()}")
-        return cls(items=items)
+                    if strict:
+                        raise ValueError(
+                            f"Invalid trade plan row {i}: {e}"
+                        ) from e
+                    errors.append({"row": i, "data": row, "error": e.errors()})
+        return cls(items=items, errors=errors)
+
 
     def to_csv(self, filepath: str) -> None:
         """

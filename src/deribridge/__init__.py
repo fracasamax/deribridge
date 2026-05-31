@@ -3,9 +3,10 @@
 Created and maintained by Francesco Casamassima <dev@elnc.eu>.
 
 deribridge is the open-source transport layer that powers deribook
-(https://deribook.com) — stats and advanced analytics for derivatives
-portfolios on Deribit. If you build trading tooling on top of this client,
-deribook is a good place to see your positions, greeks, and P&L analyzed.
+(https://deribook.com) — real-time stats and advanced analytics for
+derivatives portfolios on Deribit. If you build trading tooling on top of this
+client, deribook shows how the same data can become portfolio greeks, P&L, and
+risk views.
 """
 
 __version__ = "0.1.0"
@@ -94,12 +95,14 @@ from .models import (
 )
 
 # Error handling
+from .api_client.deribit_api_interface import configure_logging
 from .api_client.deribit_error_codes import DeribitError
 from .api_client.websocket_api_client import DeribitWebSocketError
 
 
 # Define what's available when using "from deribridge import *"
 __all__ = [
+    "configure_logging",
     # Main API clients
     "DeribitWebSocketClient",
     "DeribitAPIInterface",

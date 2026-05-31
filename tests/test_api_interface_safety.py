@@ -232,3 +232,52 @@ def test_indeterminate_error_is_not_swallowed_as_none():
     err = IndeterminateOrderError("submit_order", "boom", order_id=None)
     assert isinstance(err, Exception)
     assert err is not None
+
+
+# --------------------------------------------------------------------------- #
+# cancel_all_orders / close_position / close_all_positions
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_cancel_all_orders_raises_indeterminate_on_timeout():
+    iface, client = _make_interface()
+    client.send_request = AsyncMock(side_effect=asyncio.TimeoutError())
+    with pytest.raises(IndeterminateOrderError) as ei:
+        await iface.cancel_all_orders()
+    assert ei.value.operation == "cancel_all_orders"
+
+
+@pytest.mark.asyncio
+async def test_cancel_all_orders_returns_none_on_definite_failure():
+    iface, client = _make_interface()
+    client.send_request = AsyncMock(side_effect=ValueError("rejected"))
+    assert await iface.cancel_all_orders() is None
+
+
+@pytest.mark.asyncio
+async def test_close_position_raises_indeterminate_on_disconnect():
+    iface, client = _make_interface()
+    client.send_request = AsyncMock(side_effect=ConnectionError("dropped"))
+    with pytest.raises(IndeterminateOrderError) as ei:
+        await iface.close_position("BTC-PERPETUAL")
+    assert ei.value.operation == "close_position"
+
+
+@pytest.mark.asyncio
+async def test_close_all_positions_records_indeterminate_without_aborting():
+    iface, client = _make_interface()
+    # Two open positions; the first close is indeterminate, batch must continue.
+    pos = [
+        MagicMock(size=1, instrument_name="BTC-PERPETUAL"),
+        MagicMock(size=1, instrument_name="ETH-PERPETUAL"),
+    ]
+    iface.get_positions = AsyncMock(return_value=pos)
+    iface.close_position = AsyncMock(
+        side_effect=[
+            IndeterminateOrderError(operation="close_position", message="x"),
+            {"ok": True},
+        ]
+    )
+    results = await iface.close_all_positions()
+    assert len(results) == 2
+    assert results[0]["indeterminate"] is True and results[0]["success"] is False
+    assert results[1]["success"] is True
