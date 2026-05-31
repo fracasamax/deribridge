@@ -1,6 +1,6 @@
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, Literal, Dict, Any, ClassVar
+from typing import Optional, Literal, Dict, Any
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, field_validator, model_validator, field_serializer
@@ -23,34 +23,34 @@ class OrderType(str, Enum):
     MARKET_LIMIT = "market_limit"
     TRAILING_STOP = "trailing_stop"
 
-    # Common groups for easier reference
-    MARKET_TYPES: ClassVar[set] = {MARKET, STOP_MARKET, TAKE_MARKET, MARKET_LIMIT}
-    LIMIT_TYPES: ClassVar[set] = {LIMIT, STOP_LIMIT, TAKE_LIMIT}
-    CONDITIONAL_TYPES: ClassVar[set] = {STOP_LIMIT, TAKE_LIMIT, STOP_MARKET, TAKE_MARKET, TRAILING_STOP}
-
     def __str__(self) -> str:
         """Convert to lowercase string for API submission."""
         return self.value.lower()
 
     def is_market(self) -> bool:
         """Check if this is a market order type."""
-        return self in self.MARKET_TYPES
+        return self in _MARKET_ORDER_TYPES
 
     def is_limit(self) -> bool:
         """Check if this is a limit order type."""
-        return self in self.LIMIT_TYPES
+        return self in _LIMIT_ORDER_TYPES
 
     def is_conditional(self) -> bool:
         """Check if this is a conditional order type."""
-        return self in self.CONDITIONAL_TYPES
+        return self in _CONDITIONAL_ORDER_TYPES
 
     def requires_price(self) -> bool:
         """Check if this order type requires a price parameter."""
-        return self in self.LIMIT_TYPES
+        return self in _LIMIT_ORDER_TYPES
 
     def requires_trigger_price(self) -> bool:
         """Check if this order type requires a trigger price parameter."""
-        return self in {self.STOP_LIMIT, self.TAKE_LIMIT, self.STOP_MARKET, self.TAKE_MARKET}
+        return self in {
+            OrderType.STOP_LIMIT,
+            OrderType.TAKE_LIMIT,
+            OrderType.STOP_MARKET,
+            OrderType.TAKE_MARKET,
+        }
 
     @classmethod
     def _validate(cls, value, info):
@@ -65,6 +65,29 @@ class OrderType(str, Enum):
         raise ValueError(f"Invalid {cls.__name__} value: {value}")
 
 
+# Order-type groups, kept OUTSIDE the Enum body so they remain plain
+# frozensets of members rather than being absorbed as enum members (which made
+# the previous `self in self.MARKET_TYPES` checks do str substring matching).
+_MARKET_ORDER_TYPES = frozenset({
+    OrderType.MARKET,
+    OrderType.STOP_MARKET,
+    OrderType.TAKE_MARKET,
+    OrderType.MARKET_LIMIT,
+})
+_LIMIT_ORDER_TYPES = frozenset({
+    OrderType.LIMIT,
+    OrderType.STOP_LIMIT,
+    OrderType.TAKE_LIMIT,
+})
+_CONDITIONAL_ORDER_TYPES = frozenset({
+    OrderType.STOP_LIMIT,
+    OrderType.TAKE_LIMIT,
+    OrderType.STOP_MARKET,
+    OrderType.TAKE_MARKET,
+    OrderType.TRAILING_STOP,
+})
+
+
 class TimeInForce(str, Enum):
     """
     Defines how long an order remains active before it is executed or expires.
@@ -77,11 +100,6 @@ class TimeInForce(str, Enum):
     GOOD_TIL_CANCELLED = "good_til_cancelled"
     FILL_OR_KILL = "fill_or_kill"
     IMMEDIATE_OR_CANCEL = "immediate_or_cancel"
-
-    # Shorthand aliases
-    GTC: ClassVar[str] = "good_til_cancelled"
-    FOK: ClassVar[str] = "fill_or_kill"
-    IOC: ClassVar[str] = "immediate_or_cancel"
 
     def __str__(self) -> str:
         """Convert to lowercase string for API submission."""

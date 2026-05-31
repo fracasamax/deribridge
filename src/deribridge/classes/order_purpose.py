@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import ClassVar
 from pydantic_core import CoreSchema, core_schema
 
 
@@ -13,10 +12,6 @@ class OrderPurpose(str, Enum):
     """
     BUY = "buy"
     SELL = "sell"
-
-    # Class-level constants for quick access
-    LONG: ClassVar[str] = "buy"
-    SHORT: ClassVar[str] = "sell"
 
     def __str__(self) -> str:
         """Convert to lowercase string for API submission."""

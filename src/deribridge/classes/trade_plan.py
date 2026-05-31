@@ -71,8 +71,9 @@ class TradePlanItem(BaseModel):
             object.__setattr__(self, "purpose", OrderPurpose.SELL)
         else:
             object.__setattr__(self, "purpose", None)
-        return self    @ staticmethod
+        return self
 
+    @staticmethod
     def round_price(*, price, purpose, tick_size):
         if purpose == OrderPurpose.BUY:
             # Floor rounding: ensures price is at or below your calculated limit.
@@ -110,7 +111,7 @@ class TradePlanItem(BaseModel):
             instrument_name=instrument_name,
             purpose=self.purpose,
             amount=abs(self.amount),
-            type=order_type,
+            order_type=order_type,
             price=rounded_price,
             time_in_force=time_in_force,
             post_only=post_only,
@@ -158,17 +159,3 @@ class TradePlan(BaseModel):
             writer.writeheader()
             for item in self.items:
                 writer.writerow(item.model_dump(by_alias=True))
-
-
-# Example usage:
-if __name__ == "__main__":
-    csv_input_path = r"C:\Users\fraca\Downloads\Table Data-Fri Apr 04 2025.csv"
-    csv_output_path = r"C:\Users\fraca\Downloads\output_trade_plan.csv"
-
-    # Load TradePlan from CSV
-    plan = TradePlan.from_csv(csv_input_path)
-    print(f"Loaded {len(plan.items)} trade plan items.")
-
-    # Optionally, write the plan back to a new CSV file
-    plan.to_csv(csv_output_path)
-    print(f"Trade plan written to {csv_output_path}.")

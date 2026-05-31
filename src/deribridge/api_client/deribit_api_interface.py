@@ -898,7 +898,7 @@ class DeribitAPIInterface:
             time_in_force: str = "good_til_cancelled",
             reduce_only: bool = False,
             client_id: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[OrderSubmitResponse]:
         """
         Submit a limit order with common parameters.
 
@@ -924,7 +924,7 @@ class DeribitAPIInterface:
             instrument_name=instrument_name,
             purpose=OrderPurpose.BUY if side.lower() == "buy" else OrderPurpose.SELL,
             amount=amount,
-            order_type=OrderType.limit,
+            order_type=OrderType.LIMIT,
             price=price,
             time_in_force=TimeInForce(time_in_force),
             post_only=post_only,
@@ -1194,7 +1194,7 @@ class DeribitAPIInterface:
                     "time": execution_time.isoformat(),
                     "amount": amount_per_slice,
                     "price": price,
-                    "order_id": result.get("order_id"),
+                    "order_id": result.order.order_id if result.order else None,
                     "status": "submitted"
                 })
             else:
@@ -1292,7 +1292,7 @@ class DeribitAPIInterface:
                 continue
 
             # Track the order and wait for it to fill
-            order_id = order_result.get("order_id")
+            order_id = order_result.order.order_id if order_result.order else None
             results.append({
                 "status": "placed",
                 "order_id": order_id,
@@ -1428,13 +1428,13 @@ if __name__ == "__main__":
                 post_only=True
             )
 
-            if order_result:
-                print(
-                    f"Order placed successfully: {order_result.get('order_id')}")
+            if order_result and order_result.order and order_result.order.order_id:
+                order_id = order_result.order.order_id
+                print(f"Order placed successfully: {order_id}")
 
                 # Wait a moment and cancel the order
                 await asyncio.sleep(5)
-                cancel_result = await api.cancel_order(order_result.get("order_id"))
+                cancel_result = await api.cancel_order(order_id)
                 print(f"Order cancelled: {cancel_result}")
 
             # Get performance metrics
