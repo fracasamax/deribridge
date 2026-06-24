@@ -86,6 +86,32 @@ def test_order_book_one_sided_returns_none_helpers():
     assert ob.mid is None and ob.spread is None
 
 
+def test_order_book_normalizes_unsorted_levels():
+    """Defensive invariant: even if an adapter passes unsorted levels, bids are
+    sorted descending and asks ascending so the top of book is always correct."""
+    ob = OrderBook(
+        symbol=_spot_symbol(),
+        bids=[
+            OrderBookLevel(price="98", amount="1"),
+            OrderBookLevel(price="100", amount="2"),
+            OrderBookLevel(price="99", amount="3"),
+        ],
+        asks=[
+            OrderBookLevel(price="103", amount="1"),
+            OrderBookLevel(price="101", amount="2"),
+            OrderBookLevel(price="102", amount="3"),
+        ],
+        timestamp=datetime.now(timezone.utc),
+    )
+    assert ob.best_bid.price == Decimal("100")  # highest bid
+    assert ob.best_ask.price == Decimal("101")  # lowest ask
+    assert [lvl.price for lvl in ob.bids] == [Decimal("100"), Decimal("99"), Decimal("98")]
+    assert [lvl.price for lvl in ob.asks] == [Decimal("101"), Decimal("102"), Decimal("103")]
+    assert ob.spread == Decimal("1")
+    assert ob.spread >= 0
+    assert ob.mid == Decimal("100.5")
+
+
 # --------------------------------------------------------------------------- #
 # raw passthrough
 # --------------------------------------------------------------------------- #

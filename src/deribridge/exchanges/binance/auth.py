@@ -30,11 +30,16 @@ class BinanceHmacAuth:
         if not self.is_authenticated:
             return req
         assert self.credentials is not None and self.credentials.secret is not None
+        # Build the exact query string once and sign *that* string, then append
+        # the signature as a final param. The signed bytes are fully determined
+        # here (urlencode emits params in insertion order), so the signature can
+        # never silently diverge from however the caller/httpx later serializes
+        # the dict: a correct client must send ``signed_query + "&signature=..."``.
         params = dict(req.params)
         params["timestamp"] = now_ms
-        query = urlencode(params)
+        signed_query = urlencode(params)
         signature = hmac.new(
-            self.credentials.secret.encode(), query.encode(), hashlib.sha256
+            self.credentials.secret.encode(), signed_query.encode(), hashlib.sha256
         ).hexdigest()
         params["signature"] = signature
         return Request(

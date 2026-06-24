@@ -21,6 +21,7 @@ from ...core.enums import AssetKind, Side, TimeInForce
 from ...core.errors import OrderRejected, UnsupportedOperation
 from ...core.models import (
     AccountSummary,
+    FundingRate,
     Instrument,
     Order,
     OrderBook,
@@ -111,6 +112,12 @@ class DeribitAdapter(ExchangeAdapter):
         raw = await self._client.get_ticker(self._raw(symbol))
         return self._mapper.ticker(raw, self._symbol(symbol))
 
+    async def get_funding_rate(self, symbol: SymbolLike) -> FundingRate:
+        # Deribit exposes the current funding on the public/ticker result
+        # (field ``current_funding``); a point read needs no time window.
+        raw = await self._client.get_ticker(self._raw(symbol))
+        return self._mapper.funding_rate(raw, self._symbol(symbol))
+
     # -- account / positions ----------------------------------------------- #
     async def get_account(self) -> AccountSummary:
         raw = await self._client.get_account_summaries(extended=True)
@@ -197,6 +204,22 @@ class DeribitAdapter(ExchangeAdapter):
 
         await self._client.subscribe_ticker(raw_name, _wrap)
         return SubscriptionHandle(channels=(f"ticker.{raw_name}.100ms",))
+
+    async def subscribe_orders(
+        self, handler: Callable[[Order], Awaitable[None]]
+    ) -> SubscriptionHandle:
+        async def _wrap(message: dict) -> None:
+            data = message.get("data") if isinstance(message, dict) else None
+            # Deribit's user.orders channel delivers either a single order dict
+            # or a batch (list) of them; dispatch each as a canonical Order.
+            if isinstance(data, list):
+                for raw in data:
+                    await handler(self._mapper.order(raw))
+            elif data:
+                await handler(self._mapper.order(data))
+
+        await self._client.subscribe_user_orders(callback=_wrap)
+        return SubscriptionHandle(channels=("user.orders.any.any.raw",))
 
     async def unsubscribe(self, handle: SubscriptionHandle) -> None:
         await self._client.unsubscribe(list(handle.channels))

@@ -10,7 +10,7 @@ import pytest
 
 from deribridge.core.enums import OrderType, Side
 from deribridge.core.errors import IndeterminateOrderError, OrderRejected
-from deribridge.core.models import Order, OrderRequest, Ticker
+from deribridge.core.models import FundingRate, Order, OrderRequest, Ticker
 from deribridge.exchanges.deribit.adapter import DeribitAdapter
 from deribridge.exchanges.deribit.deribit_response_models import Order as WireOrder
 
@@ -73,6 +73,84 @@ async def test_get_order_book_honors_depth(load_json):
 
     assert ob.best_ask.price == Decimal("35001.0")
     iface.client.get_order_book.assert_awaited_once_with("BTC-PERPETUAL", 5)
+
+
+@pytest.mark.asyncio
+async def test_get_funding_rate_reads_current_funding():
+    adapter, iface = _make_adapter()
+    iface.client.get_ticker = AsyncMock(
+        return_value={
+            "instrument_name": "BTC-PERPETUAL",
+            "current_funding": 0.0001,
+            "timestamp": 1700000000000,
+        }
+    )
+
+    fr = await adapter.get_funding_rate("BTC-PERPETUAL")
+
+    assert isinstance(fr, FundingRate)
+    assert fr.rate == 0.0001
+    assert isinstance(fr.rate, float)  # analytics stays float
+    assert fr.symbol.canonical == "BTC/USD:perpetual"
+    iface.client.get_ticker.assert_awaited_once_with("BTC-PERPETUAL")
+
+
+# --------------------------------------------------------------------------- #
+# streaming: user-order dispatch
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_subscribe_orders_dispatches_canonical_order():
+    adapter, iface = _make_adapter()
+    iface.client.subscribe_user_orders = AsyncMock()
+
+    received: list[Order] = []
+
+    async def on_order(o: Order) -> None:
+        received.append(o)
+
+    handle = await adapter.subscribe_orders(on_order)
+    assert handle.channels == ("user.orders.any.any.raw",)
+
+    # Capture the callback the adapter registered with the ws client and push a
+    # raw user.orders message through the real map->dispatch path.
+    callback = iface.client.subscribe_user_orders.call_args.kwargs["callback"]
+    raw_order = {
+        "order_id": "ETH-999",
+        "instrument_name": "BTC-PERPETUAL",
+        "direction": "sell",
+        "amount": 5.0,
+        "price": 36000.0,
+        "order_state": "open",
+        "order_type": "limit",
+        "filled_amount": 0.0,
+    }
+    await callback({"channel": "user.orders.any.any.raw", "data": raw_order})
+
+    assert len(received) == 1
+    assert isinstance(received[0], Order)
+    assert received[0].order_id == "ETH-999"
+    assert received[0].side is Side.SELL
+
+
+@pytest.mark.asyncio
+async def test_subscribe_orders_handles_batched_list_payload():
+    adapter, iface = _make_adapter()
+    iface.client.subscribe_user_orders = AsyncMock()
+
+    received: list[Order] = []
+
+    async def on_order(o: Order) -> None:
+        received.append(o)
+
+    await adapter.subscribe_orders(on_order)
+    callback = iface.client.subscribe_user_orders.call_args.kwargs["callback"]
+    raws = [
+        {"order_id": "A-1", "instrument_name": "BTC-PERPETUAL", "direction": "buy"},
+        {"order_id": "A-2", "instrument_name": "BTC-PERPETUAL", "direction": "sell"},
+    ]
+    await callback({"channel": "user.orders.any.any.raw", "data": raws})
+
+    assert [o.order_id for o in received] == ["A-1", "A-2"]
 
 
 # --------------------------------------------------------------------------- #

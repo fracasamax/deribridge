@@ -24,7 +24,9 @@ DERIBIT_CAPABILITIES = Capabilities(
     greeks=True,
     positions=True,
     user_data_stream=True,
-    replace_order=True,
+    # No canonical replace/amend method exists on ExchangeAdapter, so the
+    # framework cannot expose it — declaring it would be dishonest.
+    replace_order=False,
     order_types=frozenset(
         {
             OrderType.LIMIT,

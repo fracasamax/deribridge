@@ -176,6 +176,34 @@ def test_capabilities_are_coherent(harness):
     assert isinstance(caps.order_types, frozenset)
 
 
+#: Capability flags that imply a concrete adapter method must be overridden.
+#: A flag set ``True`` while the method still resolves to the base ABC (which
+#: only raises ``UnsupportedOperation``) is a dishonest capability and must fail.
+_CAPABILITY_METHODS = {
+    "funding_rate": "get_funding_rate",
+    "candles": "get_candles",
+    "positions": "get_positions",
+    "trading": "submit_order",
+    "user_data_stream": "subscribe_orders",
+}
+
+
+def test_capability_flags_have_implementations(harness):
+    """A capability that claims support must back it with a real override.
+
+    Guards against the failure where a flag is ``True`` but the method silently
+    raises ``UnsupportedOperation`` from the base ABC.
+    """
+    caps = harness.adapter.capabilities
+    adapter_cls = type(harness.adapter)
+    for flag, method in _CAPABILITY_METHODS.items():
+        if getattr(caps, flag):
+            assert getattr(adapter_cls, method) is not getattr(ExchangeAdapter, method), (
+                f"{harness.name} declares capability {flag!r}=True but does not "
+                f"override {method!r} (it would raise UnsupportedOperation)"
+            )
+
+
 @pytest.mark.asyncio
 async def test_subscribe_ticker_dispatches_canonical(harness):
     if not harness.adapter.capabilities.has_websocket:

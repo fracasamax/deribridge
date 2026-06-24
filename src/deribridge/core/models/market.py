@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ..enums import Interval, Side
 from .base import CanonicalModel, Money, OptMoney
@@ -39,12 +39,33 @@ class Greeks(CanonicalModel):
 
 
 class OrderBook(CanonicalModel):
+    """A canonical order book snapshot (or delta).
+
+    Canonical ordering invariant: ``bids`` are sorted descending by price and
+    ``asks`` ascending by price, so ``best_bid``/``best_ask`` are always the
+    first element of each side and ``mid``/``spread`` are well-defined. Both
+    built-in mappers already emit sorted levels; a defensive ``@model_validator``
+    re-normalizes ordering so an adapter passing unsorted levels cannot silently
+    corrupt the top of book.
+    """
+
     symbol: Symbol
     bids: list[OrderBookLevel] = Field(default_factory=list)  # sorted desc by price
     asks: list[OrderBookLevel] = Field(default_factory=list)  # sorted asc by price
     timestamp: datetime
     change_id: Optional[int] = None  # venue sequence id (delta-applying venues)
     is_snapshot: bool = True
+
+    @model_validator(mode="after")
+    def _normalize_ordering(self) -> OrderBook:
+        """Enforce the canonical ordering invariant defensively.
+
+        A no-op for already-sorted input. Only the list order changes; the
+        ``OrderBookLevel`` instances themselves are never mutated.
+        """
+        self.bids.sort(key=lambda lvl: lvl.price, reverse=True)
+        self.asks.sort(key=lambda lvl: lvl.price)
+        return self
 
     @property
     def best_bid(self) -> Optional[OrderBookLevel]:

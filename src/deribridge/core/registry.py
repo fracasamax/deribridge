@@ -58,7 +58,19 @@ def resolve(name: str) -> type:
         ep = _entry_point(key)
         if ep is None:
             raise UnknownExchangeError(name, available_adapters())
-        return ep.load()
+        try:
+            return ep.load()
+        except ImportError as exc:
+            missing = getattr(exc, "name", "") or ""
+            # A failure importing deribridge's own code is a real bug, not a
+            # missing optional dependency — surface it unchanged. Same rule the
+            # built-in path uses below.
+            if missing.startswith("deribridge"):
+                raise
+            # Out-of-tree adapters have no pip-extra entry; the adapter name is
+            # the best available extra hint (mirrors the built-in fallback
+            # ``extra = entry.extra if entry else key``).
+            raise MissingExchangeExtra(key, extra, missing) from exc
 
     try:
         module = importlib.import_module(module_path)  # type: ignore[arg-type]

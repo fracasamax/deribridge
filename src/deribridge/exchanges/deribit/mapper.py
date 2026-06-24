@@ -14,6 +14,7 @@ from ...core.enums import AssetKind, OrderState, OrderType, Side, TimeInForce
 from ...core.models import (
     AccountSummary,
     Balance,
+    FundingRate,
     Greeks,
     Instrument,
     Order,
@@ -140,6 +141,33 @@ class DeribitMapper:
             raw=raw,
         )
 
+    def funding_rate(self, raw: dict[str, Any], symbol: Symbol) -> FundingRate:
+        """Map a Deribit ticker payload to a canonical point-in-time funding rate.
+
+        Deribit exposes the current funding as the ``current_funding`` field
+        (a float fraction) on the public/ticker result, timestamped by the
+        ticker's ``timestamp`` (epoch ms). The rate stays a float (analytics).
+
+        Raises:
+            ValueError: if the payload carries no ``current_funding``. Deribit
+                reports it only for perpetuals, so a missing field means funding
+                does not apply to this instrument — surfaced explicitly rather
+                than fabricated as ``0.0`` (which is a valid rate in its own
+                right and must stay distinguishable from "absent").
+        """
+        current = raw.get("current_funding")
+        if current is None:
+            raise ValueError(
+                f"no funding rate for {symbol.raw!r}: Deribit reports "
+                "current_funding only for perpetual instruments"
+            )
+        return FundingRate(
+            symbol=symbol,
+            rate=float(current),
+            timestamp=ms_to_dt(raw.get("timestamp")) or now_utc(),
+            raw=raw,
+        )
+
     # -- account / positions ----------------------------------------------- #
     def position(self, raw: dict[str, Any]) -> Position:
         greeks = None
@@ -167,6 +195,19 @@ class DeribitMapper:
         )
 
     def account(self, raw: dict[str, Any]) -> AccountSummary:
+        """Map a Deribit account-summary payload to a canonical account summary.
+
+        Per-currency ``balances`` always come from the ``summaries`` list (or
+        the top-level payload itself when ``summaries`` is absent, i.e. a
+        single-currency non-extended summary).
+
+        Portfolio-level fields (``equity``/``margin_balance``/``initial_margin``/
+        ``maintenance_margin``) are read from the *top-level* payload, which is
+        where Deribit places the cross-currency aggregate in an extended,
+        multi-currency ``get_account_summaries`` response. For a single-currency
+        summary the same fields live at the top level too, so the single-summary
+        behavior is preserved without special-casing ``len(summaries) == 1``.
+        """
         summaries = raw.get("summaries") or [raw]
         balances = [
             Balance(
@@ -181,13 +222,13 @@ class DeribitMapper:
         first = summaries[0] if summaries else {}
         return AccountSummary(
             balances=balances,
-            equity=opt_decimal(first.get("equity")) if len(summaries) == 1 else None,
-            margin_balance=opt_decimal(first.get("margin_balance")) if len(summaries) == 1 else None,
-            initial_margin=opt_decimal(first.get("initial_margin")) if len(summaries) == 1 else None,
-            maintenance_margin=(
-                opt_decimal(first.get("maintenance_margin")) if len(summaries) == 1 else None
+            equity=opt_decimal(raw.get("equity")),
+            margin_balance=opt_decimal(raw.get("margin_balance")),
+            initial_margin=opt_decimal(raw.get("initial_margin")),
+            maintenance_margin=opt_decimal(raw.get("maintenance_margin")),
+            portfolio_margin_enabled=raw.get(
+                "portfolio_margining_enabled", first.get("portfolio_margining_enabled")
             ),
-            portfolio_margin_enabled=first.get("portfolio_margining_enabled"),
             raw=raw,
         )
 
