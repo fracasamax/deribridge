@@ -10,9 +10,9 @@ import websockets
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 
-from ..classes.currency import Currency
-from ..classes.order import OrderType, TimeInForce
-from ..classes.order_purpose import OrderPurpose
+from ...classes.currency import Currency
+from ...classes.order import OrderType, TimeInForce
+from ...classes.order_purpose import OrderPurpose
 from .deribit_error_codes import get_error_message, get_short_message
 
 

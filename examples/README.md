@@ -8,6 +8,7 @@ so the library stays import-safe.
 |---|---|---|---|
 | [`parse_instrument.py`](parse_instrument.py) | no | no | Parse instrument names into typed objects. |
 | [`build_order.py`](build_order.py) | no | no | Build `Order` objects and inspect API params. |
+| [`multi_exchange.py`](multi_exchange.py) | yes | no | Canonical `connect()` API across Deribit + Binance (public data; needs `deribridge[all]`). |
 | [`connect_client.py`](connect_client.py) | yes | yes | Connect a low-level client (uses test env by default). |
 | [`run_api_interface.py`](run_api_interface.py) | yes | yes | **Can place a REAL order** — gated, testnet only. |
 

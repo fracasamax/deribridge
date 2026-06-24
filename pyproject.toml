@@ -1,7 +1,7 @@
 [project]
 name = "deribridge"
-version = "0.1.0"
-description = "Async, typed Python client and middleware for the Deribit API"
+version = "1.0.0"
+description = "Async, typed multi-exchange bridge: structured data and a common interface across crypto exchanges (Deribit, Binance, ...)"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
@@ -10,12 +10,15 @@ authors = [
 ]
 keywords = [
     "deribit",
+    "binance",
     "crypto",
     "cryptocurrency",
     "trading",
     "derivatives",
     "options",
     "futures",
+    "multi-exchange",
+    "exchange-adapter",
     "portfolio-analytics",
     "deribook",
     "async",
@@ -24,7 +27,7 @@ keywords = [
     "api-client",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Financial and Insurance Industry",
     "License :: OSI Approved :: MIT License",
@@ -38,10 +41,30 @@ classifiers = [
     "Framework :: AsyncIO",
     "Typing :: Typed",
 ]
+# Core depends only on what the shared framework needs (canonical models +
+# credential loading). Each exchange adapter's third-party transport deps are
+# gated behind an extra and imported lazily — adapter *code* always ships, only
+# its dependencies are optional.
 dependencies = [
     "python-dotenv>=1.2.2",
     "pydantic>=2.11.5",
+]
+
+[project.optional-dependencies]
+# Deribit speaks WebSocket JSON-RPC only.
+deribit = [
     "websockets>=15.0.1",
+]
+# Binance uses REST (httpx) plus WebSocket streams.
+binance = [
+    "httpx>=0.27",
+    "websockets>=15.0.1",
+]
+# Install every bundled adapter's dependencies. Self-referential so the lists
+# above stay the single source of truth.
+all = [
+    "deribridge[deribit]",
+    "deribridge[binance]",
 ]
 
 [project.urls]
@@ -64,12 +87,22 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "pip-audit>=2.7",
+    # All adapter transport deps, so `uv run pytest` exercises the whole suite
+    # (end users still get these gated behind the per-exchange extras).
+    "websockets>=15.0.1",
+    "httpx>=0.27",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+
+[tool.mypy]
+# The pydantic plugin teaches mypy that Field(default=...) provides a default,
+# so models constructed across module boundaries don't report spurious
+# "missing named argument" errors.
+plugins = ["pydantic.mypy"]
 
 [tool.ruff]
 target-version = "py312"

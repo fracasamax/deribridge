@@ -21,16 +21,67 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install package with dev dependencies
+      - name: Install package with all adapters + dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e . pytest pytest-asyncio ruff
+          pip install -e ".[all]" pytest pytest-asyncio ruff
 
       - name: Lint (ruff)
         run: ruff check src tests
 
       - name: Run tests
         run: pytest -q
+
+  core-only:
+    # Proves the central invariant: adapter *code* ships in every install, but
+    # adapter *dependencies* are gated behind extras. A core-only install must
+    # import, discover adapters without importing them, and raise a friendly
+    # MissingExchangeExtra — never a bare ModuleNotFoundError.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install CORE ONLY (no extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest pytest-asyncio
+
+      - name: Adapter deps are absent
+        run: |
+          python -c "import importlib.util as u; assert u.find_spec('websockets') is None, 'websockets leaked into core'; assert u.find_spec('httpx') is None, 'httpx leaked into core'"
+
+      - name: Core-only tests (lazy import, discovery, friendly errors, shared models)
+        run: pytest -q tests/core
+
+  typecheck:
+    # Non-blocking: surfaces type regressions without gating merges yet.
+    # Promote to a required check once the type surface is clean.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package with type-checking tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . mypy
+
+      - name: Type check (mypy)
+        run: mypy src
 
   build:
     runs-on: ubuntu-latest
