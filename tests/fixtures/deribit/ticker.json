@@ -1,0 +1,21 @@
+{
+  "instrument_name": "BTC-PERPETUAL",
+  "timestamp": 1700000000000,
+  "state": "open",
+  "last_price": 35000.5,
+  "best_bid_price": 35000.0,
+  "best_bid_amount": 100.0,
+  "best_ask_price": 35001.0,
+  "best_ask_amount": 50.0,
+  "mark_price": 35000.25,
+  "index_price": 35000.0,
+  "open_interest": 12345.0,
+  "current_funding": 0.0001,
+  "stats": {
+    "high": 36000.0,
+    "low": 34000.0,
+    "volume": 1000.0,
+    "volume_usd": 35000000.0,
+    "price_change": 2.5
+  }
+}

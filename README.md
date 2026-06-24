@@ -4,16 +4,21 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![Typed](https://img.shields.io/badge/typing-typed-brightgreen.svg)](https://peps.python.org/pep-0561/)
 
-**Async, typed Python client and middleware for the [Deribit](https://docs.deribit.com/) API.**
+**Async, typed, multi-exchange bridge for crypto exchanges.**
 
-`deribridge` is a structured layer over Deribit's WebSocket API: a typed transport
-client, a higher-level trading interface with order-lifecycle tracking, built-in rate
-limiting, and Pydantic models for every response — so you can build trading tooling
-without hand-parsing JSON or babysitting reconnects.
+`deribridge` turns each exchange's API into the *same* canonical, typed data
+classes behind a common interface — so you build trading tooling against one
+model instead of hand-parsing each venue's JSON. Pick an exchange by name; add
+a new one by writing a single adapter that maps its API to the canonical model.
+
+[Deribit](https://docs.deribit.com/) is the reference adapter (a hardened
+WebSocket client with order-lifecycle tracking and rate limiting); Binance is a
+worked REST + WebSocket example. Adapter code ships with the package; an
+adapter's dependencies are gated behind extras and imported lazily.
 
 It is also the open-source bridge behind **[deribook](https://deribook.com)**,
-where the same Deribit data feeds real-time portfolio analytics, greeks, P&L, and
-risk views.
+where Deribit data feeds real-time portfolio analytics, greeks, P&L, and risk
+views. See [docs/architecture/multi-exchange.md](docs/architecture/multi-exchange.md).
 
 ## Features
 
@@ -28,14 +33,22 @@ risk views.
 
 ## Installation
 
+Adapter code always ships; install the extras for the exchanges you use (this
+pulls each adapter's transport dependencies):
+
 ```bash
-pip install deribridge
+pip install "deribridge[deribit]"     # Deribit (WebSocket)
+pip install "deribridge[binance]"     # Binance (REST + WebSocket)
+pip install "deribridge[all]"         # every bundled adapter
 ```
+
+A bare `pip install deribridge` installs the framework core; calling an adapter
+whose extra is missing raises an actionable error telling you what to install.
 
 Until the first PyPI release you can install straight from GitHub:
 
 ```bash
-pip install git+https://github.com/fracasamax/deribridge.git
+pip install "deribridge[all] @ git+https://github.com/fracasamax/deribridge.git"
 ```
 
 Requires Python ≥ 3.12.
@@ -69,22 +82,38 @@ DERIBIT_API_SECRET_TEST=your_test_client_secret
 
 ## Quick start
 
+Canonical, exchange-agnostic API — the same code works across adapters:
+
 ```python
 import asyncio
-from deribridge import DeribitAPIInterface
+import deribridge
 
 
 async def main():
-    api = DeribitAPIInterface.configure(use_test_env=True)
+    async with deribridge.create("deribit", testnet=True) as client:
+        ticker = await client.get_ticker("BTC-PERPETUAL")
+        print("Deribit mark price:", ticker.mark_price)  # Decimal
 
-    if await api.start_client():
-        await api.subscribe_to_ticker("BTC-PERPETUAL")
-        ticker = await api.get_ticker("BTC-PERPETUAL")
-        print(f"BTC-PERPETUAL mark price: {ticker.mark_price}")
-        await api.stop_client()
+    async with deribridge.create("binance") as client:
+        book = await client.get_order_book("BTCUSDT", depth=10)
+        print("Binance best bid:", book.best_bid.price)  # Decimal
 
 
 asyncio.run(main())
+```
+
+`deribridge.available_adapters()` lists installed adapters; `connect(...)` builds
+and connects, `create(...)` builds for use with `async with`.
+
+The Deribit-specific interface remains available unchanged:
+
+```python
+from deribridge import DeribitAPIInterface
+
+api = DeribitAPIInterface.configure(use_test_env=True)
+if await api.start_client():
+    ticker = await api.get_ticker("BTC-PERPETUAL")  # Deribit response model (float)
+    await api.stop_client()
 ```
 
 Fuller runnable examples live in [`examples/`](examples/) — instrument parsing
@@ -112,10 +141,19 @@ For a production example of the kind of analytics layer this bridge supports, se
 
 ```
 src/deribridge/
-├── api_client/   # WebSocket client, API interface, rate limiter, response models
-├── classes/      # Domain types (Order, Instrument, Currency, ...)
-└── models/       # Enums / value models (OrderType, TimeInForce, Interval, ...)
+├── core/         # exchange-agnostic framework: canonical models, ExchangeAdapter,
+│                 #   transport protocols, registry, connect()/create() facade
+├── exchanges/
+│   ├── deribit/  # reference adapter (WebSocket)
+│   └── binance/  # worked example (REST + WebSocket; needs the `binance` extra)
+├── classes/      # legacy domain types (Order, Instrument, Currency, ...)
+├── models/       # legacy enums / value models
+└── api_client/   # deprecated re-export shim for old Deribit import paths
 ```
+
+See [docs/architecture/multi-exchange.md](docs/architecture/multi-exchange.md)
+for the design and [docs/MIGRATION.md](docs/MIGRATION.md) for upgrading from
+0.1.x.
 
 ## Key exports
 
@@ -136,16 +174,19 @@ Using `deribridge` in your own project? Open a PR adding it here.
 
 ## Stability & compatibility
 
-`deribridge` is **beta** (`0.x`): public names and return types may change
-between minor releases, and the high-level trading helpers in particular are
-still evolving. Pin a version if you need stability, and check the
-[CHANGELOG](CHANGELOG.md) for breaking changes.
+`deribridge` is **1.0** and follows [Semantic Versioning](https://semver.org):
+the public API (the canonical models, the `ExchangeAdapter` interface, and the
+`connect()`/`create()` facade) is stable, and breaking changes will bump the
+major version. Legacy Deribit-specific names remain available behind deprecation
+shims. Check the [CHANGELOG](CHANGELOG.md) and the
+[migration guide](docs/MIGRATION.md) when upgrading.
 
-- Targets the Deribit **WebSocket JSON-RPC v2** API, with both test and
-  production endpoints (switch via `use_test_env`).
+- Each exchange is a pluggable adapter; Deribit (WebSocket JSON-RPC v2) is the
+  reference adapter and Binance (REST + WebSocket) is a worked example. Both
+  support test and production endpoints.
 - Supported on **Python 3.12 and 3.13**.
-- Deribit may change its API at any time; tracking those changes may require
-  updates here.
+- Exchanges may change their APIs at any time; tracking those changes may
+  require updates to the affected adapter.
 
 ## ⚠️ Disclaimer
 

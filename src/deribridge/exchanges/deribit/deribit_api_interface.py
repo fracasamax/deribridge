@@ -10,11 +10,12 @@ from typing import Dict, List, Optional, Any, Callable, Tuple
 from dotenv import load_dotenv
 from websockets.exceptions import ConnectionClosed
 
-from ..classes.order import Order, OrderType, TimeInForce
+from ...classes.order import Order, OrderType, TimeInForce
 from .enhanced_api_client import EnhancedDeribitClient
 from .websocket_api_client import DeribitWebSocketError
 from .deribit_response_models import OrderBook, Ticker, Position, Order as OrderModel, \
     OrderSubmitResponse, OrderCancelResponse
+from ...core.errors import IndeterminateOrderError
 
 # Sentinel error code used by the underlying websocket client to flag
 # request timeouts (see DeribitWebSocketClient.send_request). A timeout means
@@ -23,35 +24,12 @@ from .deribit_response_models import OrderBook, Ticker, Position, Order as Order
 _TIMEOUT_ERROR_CODE = -1
 
 
-class IndeterminateOrderError(Exception):
-    """Raised when an order request's outcome is unknown.
-
-    A request timed out or the socket dropped mid-flight, so we cannot tell
-    whether the exchange accepted, rejected, or never received the order.
-    This is deliberately DISTINCT from a definite failure (which the order
-    methods still signal by returning ``None``): the caller MUST reconcile the
-    real state via ``get_order_state``/``get_open_orders`` before retrying, or
-    it risks duplicating a live order.
-
-    Attributes:
-        operation: The order operation that was in flight ("submit_order",
-            "cancel_order", "replace_order").
-        order_id: The exchange order id involved, if known (None for new
-            submissions that had not yet been assigned an id).
-        cause: The underlying exception that triggered the indeterminate state.
-    """
-
-    def __init__(
-            self,
-            operation: str,
-            message: str,
-            order_id: Optional[str] = None,
-            cause: Optional[BaseException] = None,
-    ):
-        self.operation = operation
-        self.order_id = order_id
-        self.cause = cause
-        super().__init__(message)
+# IndeterminateOrderError is now the canonical, framework-level error: it was
+# promoted to ``deribridge.core.errors`` so every exchange adapter shares the
+# same success / definite-failure / indeterminate outcome trichotomy. It is
+# imported at the top of this module and re-exported here for backward
+# compatibility (``from deribridge.api_client.deribit_api_interface import
+# IndeterminateOrderError`` still works).
 
 
 def _is_indeterminate_error(exc: Exception) -> bool:
@@ -1018,7 +996,7 @@ class DeribitAPIInterface:
         if side.lower() not in ["buy", "sell"]:
             raise ValueError("Side must be 'buy' or 'sell'")
 
-        from ..classes.order_purpose import OrderPurpose
+        from ...classes.order_purpose import OrderPurpose
 
         # Order is a pydantic BaseModel; every omitted field has a default. mypy
         # without the pydantic plugin (not enabled in this repo's config) wrongly

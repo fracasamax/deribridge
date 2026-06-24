@@ -1,9 +1,9 @@
 import re
 from datetime import datetime, timezone
 
-from ..classes.instrument import Instrument
-from ..classes.option_type import OptionType
-from ..classes.instrument_type import InstrumentType
+from ...classes.instrument import Instrument
+from ...classes.option_type import OptionType
+from ...classes.instrument_type import InstrumentType
 
 
 # Note: DeribitInstrument implements the abstract parse_instrument method

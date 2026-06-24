@@ -1,0 +1,10 @@
+{
+  "instrument_name": "BTC-PERPETUAL",
+  "timestamp": 1700000000000,
+  "change_id": 123456,
+  "mark_price": 35000.25,
+  "index_price": 35000.0,
+  "state": "open",
+  "bids": [[35000.0, 100.0], [34999.0, 200.0]],
+  "asks": [[35001.0, 50.0], [35002.0, 75.0]]
+}
